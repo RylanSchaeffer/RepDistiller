@@ -17,7 +17,7 @@ from dataset.cifar100 import get_cifar100_dataloaders
 
 from helper.util import adjust_learning_rate, accuracy, AverageMeter
 from helper.loops import train_vanilla as train, validate
-
+f
 
 def parse_option():
 
@@ -89,7 +89,9 @@ def main():
 
     # dataloader
     if opt.dataset == 'cifar100':
-        train_loader, val_loader = get_cifar100_dataloaders(batch_size=opt.batch_size, num_workers=opt.num_workers)
+        train_loader, val_loader = get_cifar100_dataloaders(
+            batch_size=opt.batch_size,
+            num_workers=opt.num_workers)
         n_cls = 100
     else:
         raise NotImplementedError(opt.dataset)

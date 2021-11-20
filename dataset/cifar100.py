@@ -25,10 +25,12 @@ def get_data_folder():
     hostname = socket.gethostname()
     if hostname.startswith('visiongpu'):
         data_folder = '/data/vision/phillipi/rep-learn/datasets'
+        raise NotImplementedError
     elif hostname.startswith('yonglong-home'):
         data_folder = '/home/yonglong/Data/data'
+        raise NotImplementedError
     else:
-        data_folder = './data/'
+        data_folder = '/data3/rschaef/datasets/'
 
     if not os.path.isdir(data_folder):
         os.makedirs(data_folder)
@@ -41,8 +43,10 @@ class CIFAR100Instance(datasets.CIFAR100):
     """
     def __getitem__(self, index):
         if self.train:
-            img, target = self.train_data[index], self.train_labels[index]
+            img, target = self.data[index], self.targets[index]
+            # img, target = self.train_data[index], self.train_labels[index]
         else:
+            # img, target = self.test_data[index], self.test_labels[index]
             img, target = self.test_data[index], self.test_labels[index]
 
         # doing this so that it is consistent with all other datasets
@@ -58,7 +62,9 @@ class CIFAR100Instance(datasets.CIFAR100):
         return img, target, index
 
 
-def get_cifar100_dataloaders(batch_size=128, num_workers=8, is_instance=False):
+def get_cifar100_dataloaders(batch_size: int = 128,
+                             num_workers=8,
+                             is_instance=False):
     """
     cifar 100
     """

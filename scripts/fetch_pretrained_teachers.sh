@@ -1,8 +1,7 @@
 # fetch pre-trained teacher models
+mkdir -p /data3/rschaef/pretrained_representation_distillation/save/models/
 
-mkdir -p save/models/
-
-cd save/models
+cd /data3/rschaef/pretrained_representation_distillation/save/models/
 
 mkdir -p wrn_40_2_vanilla
 wget http://shape2prog.csail.mit.edu/repo/wrn_40_2_vanilla/ckpt_epoch_240.pth
@@ -28,4 +27,4 @@ mkdir -p ResNet50_vanilla
 wget http://shape2prog.csail.mit.edu/repo/ResNet50_vanilla/ckpt_epoch_240.pth
 mv ckpt_epoch_240.pth ResNet50_vanilla/
 
-cd ../..
+cd

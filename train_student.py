@@ -8,13 +8,13 @@ import os
 import argparse
 import socket
 import time
+import wandb
 
 import tensorboard_logger as tb_logger
 import torch
 import torch.optim as optim
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
-
 
 from models import model_dict
 from models.util import Embed, ConvReg, LinearEmbed
@@ -33,7 +33,6 @@ from helper.pretrain import init
 
 
 def parse_option():
-
     hostname = socket.gethostname()
 
     parser = argparse.ArgumentParser('argument for training')
@@ -94,12 +93,13 @@ def parse_option():
         opt.learning_rate = 0.01
 
     # set the path according to the environment
+    opt.exp_path = '/data3/rschaef/pretrained_representation_distillation/save/'
     if hostname.startswith('visiongpu'):
         opt.model_path = '/path/to/my/student_model'
         opt.tb_path = '/path/to/my/student_tensorboards'
     else:
-        opt.model_path = './save/student_model'
-        opt.tb_path = './save/student_tensorboards'
+        opt.model_path = os.path.join(opt.exp_path, 'student_model')
+        opt.tb_path = os.path.join(opt.exp_path, 'student_tensorboards')
 
     iterations = opt.lr_decay_epochs.split(',')
     opt.lr_decay_epochs = list([])
@@ -108,8 +108,9 @@ def parse_option():
 
     opt.model_t = get_teacher_name(opt.path_t)
 
-    opt.model_name = 'S:{}_T:{}_{}_{}_r:{}_a:{}_b:{}_{}'.format(opt.model_s, opt.model_t, opt.dataset, opt.distill,
-                                                                opt.gamma, opt.alpha, opt.beta, opt.trial)
+    opt.model_name = 'S:{}_T:{}_{}_{}_r:{}_a:{}_b:{}_{}'.format(
+        opt.model_s, opt.model_t, opt.dataset, opt.distill,
+        opt.gamma, opt.alpha, opt.beta, opt.trial)
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
@@ -151,14 +152,16 @@ def main():
     # dataloader
     if opt.dataset == 'cifar100':
         if opt.distill in ['crd']:
-            train_loader, val_loader, n_data = get_cifar100_dataloaders_sample(batch_size=opt.batch_size,
-                                                                               num_workers=opt.num_workers,
-                                                                               k=opt.nce_k,
-                                                                               mode=opt.mode)
+            train_loader, val_loader, n_data = get_cifar100_dataloaders_sample(
+                batch_size=opt.batch_size,
+                num_workers=opt.num_workers,
+                k=opt.nce_k,
+                mode=opt.mode)
         else:
-            train_loader, val_loader, n_data = get_cifar100_dataloaders(batch_size=opt.batch_size,
-                                                                        num_workers=opt.num_workers,
-                                                                        is_instance=True)
+            train_loader, val_loader, n_data = get_cifar100_dataloaders(
+                batch_size=opt.batch_size,
+                num_workers=opt.num_workers,
+                is_instance=True)
         n_cls = 100
     else:
         raise NotImplementedError(opt.dataset)
@@ -265,9 +268,9 @@ def main():
         raise NotImplementedError(opt.distill)
 
     criterion_list = nn.ModuleList([])
-    criterion_list.append(criterion_cls)    # classification loss
-    criterion_list.append(criterion_div)    # KL divergence loss, original knowledge distillation
-    criterion_list.append(criterion_kd)     # other knowledge distillation loss
+    criterion_list.append(criterion_cls)  # classification loss
+    criterion_list.append(criterion_div)  # KL divergence loss, original knowledge distillation
+    criterion_list.append(criterion_kd)  # other knowledge distillation loss
 
     # optimizer
     optimizer = optim.SGD(trainable_list.parameters(),
