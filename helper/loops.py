@@ -89,7 +89,7 @@ def train_distill(epoch, train_loader, module_list, criterion_list, optimizer, o
     data_time = AverageMeter()
     total_losses = AverageMeter()
     classification_losses = AverageMeter()
-    kd_losses = AverageMeter()
+    kl_div_losses = AverageMeter()
     custom_losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
@@ -189,14 +189,14 @@ def train_distill(epoch, train_loader, module_list, criterion_list, optimizer, o
             raise NotImplementedError(opt.distill)
 
         classification_loss = opt.gamma * loss_cls
-        kd_loss = opt.alpha * loss_div
+        kl_div_loss = opt.alpha * loss_div
         custom_loss = opt.beta * loss_kd
-        total_loss = classification_loss + kd_loss + custom_loss
+        total_loss = classification_loss + kl_div_loss + custom_loss
 
         acc1, acc5 = accuracy(logit_s, target, topk=(1, 5))
         total_losses.update(total_loss.item(), input.size(0))
         classification_losses.update(classification_loss.item(), input.size(0))
-        kd_losses.update(kd_loss.item(), input.size(0))
+        kl_div_losses.update(kl_div_loss.item(), input.size(0))
         custom_losses.update(custom_loss.item(), input.size(0))
         top1.update(acc1[0], input.size(0))
         top5.update(acc5[0], input.size(0))
@@ -225,7 +225,7 @@ def train_distill(epoch, train_loader, module_list, criterion_list, optimizer, o
     print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
           .format(top1=top1, top5=top5))
 
-    return top1.avg, total_losses.avg, classification_losses.avg, kd_losses.avg, custom_losses.avg
+    return top1.avg, total_losses.avg, classification_losses.avg, kl_div_losses.avg, custom_losses.avg
 
 
 def validate(val_loader, model, criterion, opt):

@@ -326,7 +326,7 @@ def main():
             'train_acc': train_acc,
             'train_loss': train_loss,
             'train_classification_loss': train_classification_loss,
-            'train_kd_loss': train_kd_loss,
+            'train_kl_div_loss': train_kd_loss,
             'train_custom_loss': train_custom_loss,
             'test_acc': test_acc,
             'test_acc_top5': test_acc_top5,
