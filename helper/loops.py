@@ -87,7 +87,10 @@ def train_distill(epoch, train_loader, module_list, criterion_list, optimizer, o
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    losses = AverageMeter()
+    total_losses = AverageMeter()
+    classification_losses = AverageMeter()
+    kd_losses = AverageMeter()
+    custom_losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
 
@@ -146,6 +149,10 @@ def train_distill(epoch, train_loader, module_list, criterion_list, optimizer, o
             g_t = [feat_t[-2]]
             loss_group = criterion_kd(g_s, g_t)
             loss_kd = sum(loss_group)
+        elif opt.distill == 'krd':
+            f_s = feat_s[-1]
+            f_t = feat_t[-1]
+            loss_kd = criterion_kd(f_s, f_t)
         elif opt.distill == 'rkd':
             f_s = feat_s[-1]
             f_t = feat_t[-1]
@@ -181,16 +188,22 @@ def train_distill(epoch, train_loader, module_list, criterion_list, optimizer, o
         else:
             raise NotImplementedError(opt.distill)
 
-        loss = opt.gamma * loss_cls + opt.alpha * loss_div + opt.beta * loss_kd
+        classification_loss = opt.gamma * loss_cls
+        kd_loss = opt.alpha * loss_div
+        custom_loss = opt.beta * loss_kd
+        total_loss = classification_loss + kd_loss + custom_loss
 
         acc1, acc5 = accuracy(logit_s, target, topk=(1, 5))
-        losses.update(loss.item(), input.size(0))
+        total_losses.update(total_loss.item(), input.size(0))
+        classification_losses.update(classification_loss.item(), input.size(0))
+        kd_losses.update(kd_loss.item(), input.size(0))
+        custom_losses.update(custom_loss.item(), input.size(0))
         top1.update(acc1[0], input.size(0))
         top5.update(acc5[0], input.size(0))
 
         # ===================backward=====================
         optimizer.zero_grad()
-        loss.backward()
+        total_loss.backward()
         optimizer.step()
 
         # ===================meters=====================
@@ -206,19 +219,22 @@ def train_distill(epoch, train_loader, module_list, criterion_list, optimizer, o
                   'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
                   'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
                 epoch, idx, len(train_loader), batch_time=batch_time,
-                data_time=data_time, loss=losses, top1=top1, top5=top5))
+                data_time=data_time, loss=total_losses, top1=top1, top5=top5))
             sys.stdout.flush()
 
     print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
           .format(top1=top1, top5=top5))
 
-    return top1.avg, losses.avg
+    return top1.avg, total_losses.avg, classification_losses.avg, kd_losses.avg, custom_losses.avg
 
 
 def validate(val_loader, model, criterion, opt):
     """validation"""
     batch_time = AverageMeter()
-    losses = AverageMeter()
+    total_losses = AverageMeter()
+    classification_losses = AverageMeter()
+    kd_losses = AverageMeter()
+    custom_losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
 
@@ -240,7 +256,7 @@ def validate(val_loader, model, criterion, opt):
 
             # measure accuracy and record loss
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
-            losses.update(loss.item(), input.size(0))
+            total_losses.update(loss.item(), input.size(0))
             top1.update(acc1[0], input.size(0))
             top5.update(acc5[0], input.size(0))
 
@@ -254,10 +270,10 @@ def validate(val_loader, model, criterion, opt):
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
                       'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
                       'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-                       idx, len(val_loader), batch_time=batch_time, loss=losses,
+                       idx, len(val_loader), batch_time=batch_time, loss=total_losses,
                        top1=top1, top5=top5))
 
         print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
               .format(top1=top1, top5=top5))
 
-    return top1.avg, top5.avg, losses.avg
+    return top1.avg, top5.avg, total_losses.avg

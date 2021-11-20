@@ -127,17 +127,21 @@ class CIFAR100InstanceSample(datasets.CIFAR100):
 
         num_classes = 100
         if self.train:
-            num_samples = len(self.train_data)
-            label = self.train_labels
+            # num_samples = len(self.train_data)
+            num_samples = len(self.data)
+            # label = self.train_labels
+            label = self.targets
         else:
+            num_samples = len(self.data)
             num_samples = len(self.test_data)
-            label = self.test_labels
+            # label = self.test_labels
+            label = self.targets
 
-        self.cls_positive = [[] for i in range(num_classes)]
+        self.cls_positive = [[] for _ in range(num_classes)]
         for i in range(num_samples):
             self.cls_positive[label[i]].append(i)
 
-        self.cls_negative = [[] for i in range(num_classes)]
+        self.cls_negative = [[] for _ in range(num_classes)]
         for i in range(num_classes):
             for j in range(num_classes):
                 if j == i:
@@ -157,9 +161,11 @@ class CIFAR100InstanceSample(datasets.CIFAR100):
 
     def __getitem__(self, index):
         if self.train:
-            img, target = self.train_data[index], self.train_labels[index]
+            # img, target = self.train_data[index], self.train_labels[index]
+            img, target = self.data[index], self.targets[index]
         else:
-            img, target = self.test_data[index], self.test_labels[index]
+            # img, target = self.test_data[index], self.test_labels[index]
+            img, target = self.data[index], self.targets[index]
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
@@ -189,8 +195,12 @@ class CIFAR100InstanceSample(datasets.CIFAR100):
             return img, target, index, sample_idx
 
 
-def get_cifar100_dataloaders_sample(batch_size=128, num_workers=8, k=4096, mode='exact',
-                                    is_sample=True, percent=1.0):
+def get_cifar100_dataloaders_sample(batch_size=128,
+                                    num_workers=8,
+                                    k=4096,
+                                    mode='exact',
+                                    is_sample=True,
+                                    percent=1.0):
     """
     cifar 100
     """

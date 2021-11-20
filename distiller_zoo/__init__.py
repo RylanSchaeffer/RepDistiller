@@ -11,3 +11,4 @@ from .PKT import PKT
 from .RKD import RKDLoss
 from .SP import Similarity
 from .VID import VIDLoss
+from .KRD import KernelRepresentationDistillation

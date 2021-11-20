@@ -24,7 +24,7 @@ from dataset.cifar100 import get_cifar100_dataloaders, get_cifar100_dataloaders_
 
 from helper.util import adjust_learning_rate
 
-from distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, VIDLoss, RKDLoss
+from distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, KernelRepresentationDistillation, VIDLoss, RKDLoss
 from distiller_zoo import PKT, ABLoss, FactorTransfer, KDSVD, FSP, NSTLoss
 from crd.criterion import CRDLoss
 
@@ -65,7 +65,8 @@ def parse_option():
 
     # distillation
     parser.add_argument('--distill', type=str, default='kd', choices=['kd', 'hint', 'attention', 'similarity',
-                                                                      'correlation', 'vid', 'crd', 'kdsvd', 'fsp',
+                                                                      'correlation', 'vid', 'crd',
+                                                                      'krd', 'kdsvd', 'fsp',
                                                                       'rkd', 'pkt', 'abound', 'factor', 'nst'])
     parser.add_argument('--trial', type=str, default='1', help='trial id')
 
@@ -82,6 +83,8 @@ def parse_option():
     parser.add_argument('--nce_k', default=16384, type=int, help='number of negative samples for NCE')
     parser.add_argument('--nce_t', default=0.07, type=float, help='temperature parameter for softmax')
     parser.add_argument('--nce_m', default=0.5, type=float, help='momentum for non-parametric updates')
+    parser.add_argument('--krd_primal_or_dual', default='primal', type=str, help='Whether to use Primal or Dual')
+    parser.add_argument('--krd_c', default=1e-1, type=float, help='Ridge regression weight')
 
     # hint layer
     parser.add_argument('--hint_layer', default=2, type=int, choices=[0, 1, 2, 3, 4])
@@ -146,6 +149,9 @@ def main():
 
     opt = parse_option()
 
+    wandb.init(project='pretrained_representation_distillation',
+               config=opt)
+
     # tensorboard logger
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
 
@@ -205,6 +211,10 @@ def main():
         criterion_kd = NSTLoss()
     elif opt.distill == 'similarity':
         criterion_kd = Similarity()
+    elif opt.distill == 'krd':
+        criterion_kd = KernelRepresentationDistillation(
+            primal_or_dual=opt.krd_primal_or_dual,
+            c=opt.krd_c)
     elif opt.distill == 'rkd':
         criterion_kd = RKDLoss()
     elif opt.distill == 'pkt':
@@ -297,18 +307,32 @@ def main():
         print("==> training...")
 
         time1 = time.time()
-        train_acc, train_loss = train(epoch, train_loader, module_list, criterion_list, optimizer, opt)
+        train_acc, train_loss, train_classification_loss, train_kd_loss, train_custom_loss = train(
+            epoch, train_loader, module_list, criterion_list, optimizer, opt)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
         logger.log_value('train_acc', train_acc, epoch)
         logger.log_value('train_loss', train_loss, epoch)
 
-        test_acc, tect_acc_top5, test_loss = validate(val_loader, model_s, criterion_cls, opt)
+        test_acc, test_acc_top5, test_loss = validate(
+            val_loader, model_s, criterion_cls, opt)
 
         logger.log_value('test_acc', test_acc, epoch)
         logger.log_value('test_loss', test_loss, epoch)
-        logger.log_value('test_acc_top5', tect_acc_top5, epoch)
+        logger.log_value('test_acc_top5', test_acc_top5, epoch)
+
+        wandb.log({
+            'train_acc': train_acc,
+            'train_loss': train_loss,
+            'train_classification_loss': train_classification_loss,
+            'train_kd_loss': train_kd_loss,
+            'train_custom_loss': train_custom_loss,
+            'test_acc': test_acc,
+            'test_acc_top5': test_acc_top5,
+            'test_loss': test_loss,
+            },
+            step=epoch)
 
         # save the best model
         if test_acc > best_acc:

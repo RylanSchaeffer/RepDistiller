@@ -1,4 +1,5 @@
 from __future__ import print_function
+from typing import List
 
 import torch
 import torch.nn as nn
@@ -10,7 +11,9 @@ class Similarity(nn.Module):
     def __init__(self):
         super(Similarity, self).__init__()
 
-    def forward(self, g_s, g_t):
+    def forward(self,
+                g_s: List[torch.Tensor],
+                g_t: List[torch.Tensor]) -> List[torch.Tensor]:
         return [self.similarity_loss(f_s, f_t) for f_s, f_t in zip(g_s, g_t)]
 
     def similarity_loss(self, f_s, f_t):
