@@ -188,9 +188,9 @@ def train_distill(epoch, train_loader, module_list, criterion_list, optimizer, o
         else:
             raise NotImplementedError(opt.distill)
 
-        classification_loss = opt.gamma * loss_cls
-        kl_div_loss = opt.alpha * loss_div
-        custom_loss = opt.beta * loss_kd
+        classification_loss = opt.classification_weight * loss_cls
+        kl_div_loss = opt.kl_div_weight * loss_div
+        custom_loss = opt.custom_weight * loss_kd
         total_loss = classification_loss + kl_div_loss + custom_loss
 
         acc1, acc5 = accuracy(logit_s, target, topk=(1, 5))

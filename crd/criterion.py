@@ -18,7 +18,7 @@ class CRDLoss(nn.Module):
         opt.nce_k: number of negatives paired with each positive
         opt.nce_t: the temperature
         opt.nce_m: the momentum for updating the memory buffer
-        opt.n_data: the number of samples in the training set, therefor the memory buffer is: opt.n_data x opt.feat_dim
+        opt.n_data: the number of samples in the training set, therefore the memory buffer is: opt.n_data x opt.feat_dim
     """
     def __init__(self, opt):
         super(CRDLoss, self).__init__()

@@ -5,6 +5,12 @@ the general training framework
 from __future__ import print_function
 
 import os
+
+# Ensure system GPU indices match PyTorch CUDA GPU indices
+os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
+# Control GPU Access
+os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+
 import argparse
 import socket
 import time
@@ -70,9 +76,9 @@ def parse_option():
                                                                       'rkd', 'pkt', 'abound', 'factor', 'nst'])
     parser.add_argument('--trial', type=str, default='1', help='trial id')
 
-    parser.add_argument('-r', '--gamma', type=float, default=1, help='weight for classification')
-    parser.add_argument('-a', '--alpha', type=float, default=None, help='weight balance for KD')
-    parser.add_argument('-b', '--beta', type=float, default=None, help='weight balance for other losses')
+    parser.add_argument('--classification_weight', type=float, default=1., help='weight for classification')
+    parser.add_argument('--kl_div_weight', type=float, default=None, help='weight for KL Divergence')
+    parser.add_argument('--custom_weight', type=float, default=None, help='weight balance for other losses')
 
     # KL distillation
     parser.add_argument('--kd_T', type=float, default=4, help='temperature for KD distillation')
@@ -83,6 +89,8 @@ def parse_option():
     parser.add_argument('--nce_k', default=16384, type=int, help='number of negative samples for NCE')
     parser.add_argument('--nce_t', default=0.07, type=float, help='temperature parameter for softmax')
     parser.add_argument('--nce_m', default=0.5, type=float, help='momentum for non-parametric updates')
+
+    # pretrained representation distillation
     parser.add_argument('--krd_primal_or_dual', default='primal', type=str, help='Whether to use Primal or Dual')
     parser.add_argument('--krd_c', default=1e-1, type=float, help='Ridge regression weight')
 
@@ -113,7 +121,7 @@ def parse_option():
 
     opt.model_name = 'S:{}_T:{}_{}_{}_r:{}_a:{}_b:{}_{}'.format(
         opt.model_s, opt.model_t, opt.dataset, opt.distill,
-        opt.gamma, opt.alpha, opt.beta, opt.trial)
+        opt.classification_weight, opt.kl_div_weight, opt.custom_weight, opt.trial)
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
