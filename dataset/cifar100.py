@@ -41,6 +41,7 @@ def get_data_folder():
 class CIFAR100Instance(datasets.CIFAR100):
     """CIFAR100Instance Dataset.
     """
+
     def __getitem__(self, index):
         if self.train:
             img, target = self.data[index], self.targets[index]
@@ -102,9 +103,9 @@ def get_cifar100_dataloaders(batch_size: int = 128,
                                  train=False,
                                  transform=test_transform)
     test_loader = DataLoader(test_set,
-                             batch_size=int(batch_size/2),
+                             batch_size=int(batch_size / 2),
                              shuffle=False,
-                             num_workers=int(num_workers/2))
+                             num_workers=int(num_workers / 2))
 
     if is_instance:
         return train_loader, test_loader, n_data
@@ -116,9 +117,19 @@ class CIFAR100InstanceSample(datasets.CIFAR100):
     """
     CIFAR100Instance+Sample Dataset
     """
-    def __init__(self, root, train=True,
-                 transform=None, target_transform=None,
-                 download=False, k=4096, mode='exact', is_sample=True, percent=1.0):
+
+    def __init__(self,
+                 root,
+                 train=True,
+                 transform=None,
+                 target_transform=None,
+                 download=False,
+                 k=4096,
+                 mode='exact',
+                 negative_sampling='different_class',
+                 is_sample=True,
+                 percent=1.0):
+
         super().__init__(root=root, train=train, download=download,
                          transform=transform, target_transform=target_transform)
         self.k = k
@@ -132,15 +143,20 @@ class CIFAR100InstanceSample(datasets.CIFAR100):
             # label = self.train_labels
             label = self.targets
         else:
+            # num_samples = len(self.test_data)
             num_samples = len(self.data)
-            num_samples = len(self.test_data)
             # label = self.test_labels
             label = self.targets
 
+        assert negative_sampling in {'different_class', 'random'}
+        self.negative_sampling = negative_sampling
+
+        # Will become 2D array of shape = (number of classes, num of data in class)
         self.cls_positive = [[] for _ in range(num_classes)]
         for i in range(num_samples):
             self.cls_positive[label[i]].append(i)
 
+        # Will become 2D array of shape = (number of classes, num of data not in class)
         self.cls_negative = [[] for _ in range(num_classes)]
         for i in range(num_classes):
             for j in range(num_classes):
@@ -150,14 +166,12 @@ class CIFAR100InstanceSample(datasets.CIFAR100):
 
         self.cls_positive = [np.asarray(self.cls_positive[i]) for i in range(num_classes)]
         self.cls_negative = [np.asarray(self.cls_negative[i]) for i in range(num_classes)]
+        self.possible_sample_indices = list(range(num_samples))
 
         if 0 < percent < 1:
             n = int(len(self.cls_negative[0]) * percent)
             self.cls_negative = [np.random.permutation(self.cls_negative[i])[0:n]
                                  for i in range(num_classes)]
-
-        self.cls_positive = np.asarray(self.cls_positive)
-        self.cls_negative = np.asarray(self.cls_negative)
 
     def __getitem__(self, index):
         if self.train:
@@ -190,7 +204,18 @@ class CIFAR100InstanceSample(datasets.CIFAR100):
             else:
                 raise NotImplementedError(self.mode)
             replace = True if self.k > len(self.cls_negative[target]) else False
-            neg_idx = np.random.choice(self.cls_negative[target], self.k, replace=replace)
+            if self.negative_sampling == 'different_class':
+                neg_idx = np.random.choice(
+                    self.cls_negative[target],
+                    self.k,
+                    replace=replace)
+            elif self.negative_sampling == 'random':
+                neg_idx = np.random.choice(
+                    self.possible_sample_indices[:index] + self.possible_sample_indices[index + 1:],
+                    self.k,
+                    replace=replace)
+            else:
+                raise ValueError(f'Impermissible negative sampling: {self.negative_sampling}')
             sample_idx = np.hstack((np.asarray([pos_idx]), neg_idx))
             return img, target, index, sample_idx
 
@@ -199,6 +224,7 @@ def get_cifar100_dataloaders_sample(batch_size=128,
                                     num_workers=8,
                                     k=4096,
                                     mode='exact',
+                                    negative_sampling='different_class',
                                     is_sample=True,
                                     percent=1.0):
     """
@@ -223,6 +249,7 @@ def get_cifar100_dataloaders_sample(batch_size=128,
                                        transform=train_transform,
                                        k=k,
                                        mode=mode,
+                                       negative_sampling=negative_sampling,
                                        is_sample=is_sample,
                                        percent=percent)
     n_data = len(train_set)
@@ -236,8 +263,8 @@ def get_cifar100_dataloaders_sample(batch_size=128,
                                  train=False,
                                  transform=test_transform)
     test_loader = DataLoader(test_set,
-                             batch_size=int(batch_size/2),
+                             batch_size=int(batch_size / 2),
                              shuffle=False,
-                             num_workers=int(num_workers/2))
+                             num_workers=int(num_workers / 2))
 
     return train_loader, test_loader, n_data

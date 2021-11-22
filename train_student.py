@@ -9,7 +9,7 @@ import os
 # Ensure system GPU indices match PyTorch CUDA GPU indices
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 # Control GPU Access
-os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+os.environ["CUDA_VISIBLE_DEVICES"] = "6"
 
 import argparse
 import socket
@@ -90,9 +90,22 @@ def parse_option():
     parser.add_argument('--nce_t', default=0.07, type=float, help='temperature parameter for softmax')
     parser.add_argument('--nce_m', default=0.5, type=float, help='momentum for non-parametric updates')
 
+    # CRD flags
+    parser.add_argument('--crd_negative_sampling', default='different_class',
+                        type=str, choices=['random', 'different_class'],
+                        help='How to sample negative')
+    parser.add_argument('--crd_normalize', dest='crd_normalize', default=True,
+                        action='store_true', help='Whether to normalize CRD representations')
+    parser.add_argument('--crd_dont_normalize', dest='crd_normalize', default=False,
+                        action='store_false')
+
     # pretrained representation distillation
     parser.add_argument('--krd_primal_or_dual', default='primal', type=str, help='Whether to use Primal or Dual')
     parser.add_argument('--krd_c', default=1e-1, type=float, help='Ridge regression weight')
+    parser.add_argument('--krd_normalize', dest='krd_normalize', default=False,
+                        action='store_true', help='Whether to normalize KRD representations')
+    parser.add_argument('--krd_dont_normalize', dest='krd_normalize', default=True,
+                        action='store_false', help='Whether to normalize KRD representations')
 
     # hint layer
     parser.add_argument('--hint_layer', default=2, type=int, choices=[0, 1, 2, 3, 4])
@@ -170,7 +183,8 @@ def main():
                 batch_size=opt.batch_size,
                 num_workers=opt.num_workers,
                 k=opt.nce_k,
-                mode=opt.mode)
+                mode=opt.mode,
+                negative_sampling=opt.crd_negative_sampling)
         else:
             train_loader, val_loader, n_data = get_cifar100_dataloaders(
                 batch_size=opt.batch_size,
@@ -208,7 +222,15 @@ def main():
         opt.s_dim = feat_s[-1].shape[1]
         opt.t_dim = feat_t[-1].shape[1]
         opt.n_data = n_data
-        criterion_kd = CRDLoss(opt)
+        criterion_kd = CRDLoss(
+            student_dim=opt.s_dim,
+            teacher_dim=opt.t_dim,
+            normalize=opt.crd_normalize,
+            projection_dim=opt.feat_dim,
+            num_data=opt.n_data,
+            num_neg_examples_per_pos_example=opt.nce_k,
+            softmax_temp=opt.nce_t,
+            momentum=opt.nce_m)
         module_list.append(criterion_kd.embed_s)
         module_list.append(criterion_kd.embed_t)
         trainable_list.append(criterion_kd.embed_s)
@@ -222,7 +244,8 @@ def main():
     elif opt.distill == 'krd':
         criterion_kd = KernelRepresentationDistillation(
             primal_or_dual=opt.krd_primal_or_dual,
-            c=opt.krd_c)
+            ridge_prefactor=opt.krd_c,
+            normalize=opt.krd_normalize)
     elif opt.distill == 'rkd':
         criterion_kd = RKDLoss()
     elif opt.distill == 'pkt':

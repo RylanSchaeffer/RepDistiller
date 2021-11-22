@@ -194,10 +194,10 @@ def train_distill(epoch, train_loader, module_list, criterion_list, optimizer, o
         total_loss = classification_loss + kl_div_loss + custom_loss
 
         acc1, acc5 = accuracy(logit_s, target, topk=(1, 5))
-        total_losses.update(total_loss.item(), input.size(0))
         classification_losses.update(classification_loss.item(), input.size(0))
         kl_div_losses.update(kl_div_loss.item(), input.size(0))
         custom_losses.update(custom_loss.item(), input.size(0))
+        total_losses.update(total_loss.item(), input.size(0))
         top1.update(acc1[0], input.size(0))
         top5.update(acc5[0], input.size(0))
 

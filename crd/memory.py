@@ -7,7 +7,12 @@ class ContrastMemory(nn.Module):
     """
     memory buffer that supplies large amount of negative samples.
     """
-    def __init__(self, inputSize, outputSize, K, T=0.07, momentum=0.5):
+    def __init__(self,
+                 inputSize,
+                 outputSize,
+                 K,
+                 softmax_temp=0.07,
+                 momentum=0.5):
         super(ContrastMemory, self).__init__()
         self.nLem = outputSize
         self.unigrams = torch.ones(self.nLem)
@@ -15,7 +20,7 @@ class ContrastMemory(nn.Module):
         self.multinomial.cuda()
         self.K = K
 
-        self.register_buffer('params', torch.tensor([K, T, -1, -1, momentum]))
+        self.register_buffer('params', torch.tensor([K, softmax_temp, -1, -1, momentum]))
         stdv = 1. / math.sqrt(inputSize / 3)
         self.register_buffer('memory_v1', torch.rand(outputSize, inputSize).mul_(2 * stdv).add_(-stdv))
         self.register_buffer('memory_v2', torch.rand(outputSize, inputSize).mul_(2 * stdv).add_(-stdv))

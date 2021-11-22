@@ -10,12 +10,14 @@ class KernelRepresentationDistillation(nn.Module):
 
     def __init__(self,
                  primal_or_dual: str,
-                 c: float):
+                 ridge_prefactor: float,
+                 normalize: bool):
         assert primal_or_dual in {'primal', 'dual'}
-        assert c > 0
-        self.primal_or_dual = primal_or_dual
-        self.c = c
+        assert ridge_prefactor > 0
         super(KernelRepresentationDistillation, self).__init__()
+        self.primal_or_dual = primal_or_dual
+        self.ridge_prefactor = ridge_prefactor
+        self.normalize = normalize
 
     def forward(self,
                 f_s,
@@ -24,17 +26,18 @@ class KernelRepresentationDistillation(nn.Module):
         f_s = f_s.reshape(batch_size, -1)
         f_t = f_t.reshape(batch_size, -1)
 
+        if self.normalize:
+            f_s = torch.nn.functional.normalize(f_s)
+            f_t = torch.nn.functional.normalize(f_t)
+
         if self.primal_or_dual == 'primal':
-            H_s = self.compute_primal_hat_matrix(f_s, c=self.c)
-            H_t = self.compute_primal_hat_matrix(f_t, c=self.c)
+            H_s = self.compute_primal_hat_matrix(f_s, c=self.ridge_prefactor)
+            H_t = self.compute_primal_hat_matrix(f_t, c=self.ridge_prefactor)
         elif self.primal_or_dual == 'dual':
-            H_s = self.compute_dual_hat_matrix(f_s, c=self.c)
-            H_t = self.compute_dual_hat_matrix(f_t, c=self.c)
+            H_s = self.compute_dual_hat_matrix(f_s, c=self.ridge_prefactor)
+            H_t = self.compute_dual_hat_matrix(f_t, c=self.ridge_prefactor)
         else:
             raise ValueError
-
-        # G_s = torch.nn.functional.normalize(G_s)
-        # G_t = torch.nn.functional.normalize(G_t)
 
         loss = torch.mean(torch.square(H_s - H_t))
         return loss

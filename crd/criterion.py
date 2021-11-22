@@ -20,13 +20,35 @@ class CRDLoss(nn.Module):
         opt.nce_m: the momentum for updating the memory buffer
         opt.n_data: the number of samples in the training set, therefore the memory buffer is: opt.n_data x opt.feat_dim
     """
-    def __init__(self, opt):
+    def __init__(self,
+                 student_dim: int,
+                 teacher_dim: int,
+                 projection_dim: int,
+                 normalize: bool,
+                 num_data: int,
+                 num_neg_examples_per_pos_example: int,
+                 softmax_temp: float,
+                 momentum: float,
+                 ):
+
+        assert softmax_temp > 0.
+        assert momentum > 0.
+
         super(CRDLoss, self).__init__()
-        self.embed_s = Embed(opt.s_dim, opt.feat_dim)
-        self.embed_t = Embed(opt.t_dim, opt.feat_dim)
-        self.contrast = ContrastMemory(opt.feat_dim, opt.n_data, opt.nce_k, opt.nce_t, opt.nce_m)
-        self.criterion_t = ContrastLoss(opt.n_data)
-        self.criterion_s = ContrastLoss(opt.n_data)
+        self.embed_s = Embed(dim_in=student_dim,
+                             dim_out=projection_dim,
+                             normalize_bool=normalize)
+        self.embed_t = Embed(dim_in=teacher_dim,
+                             dim_out=projection_dim,
+                             normalize_bool=normalize)
+        self.contrast = ContrastMemory(
+            projection_dim,
+            num_data,
+            num_neg_examples_per_pos_example,
+            softmax_temp=softmax_temp,
+            momentum=momentum)
+        self.criterion_t = ContrastLoss(num_data)
+        self.criterion_s = ContrastLoss(num_data)
 
     def forward(self, f_s, f_t, idx, contrast_idx=None):
         """
@@ -78,15 +100,24 @@ class ContrastLoss(nn.Module):
 
 class Embed(nn.Module):
     """Embedding module"""
-    def __init__(self, dim_in=1024, dim_out=128):
+    def __init__(self,
+                 dim_in: int = 1024,
+                 dim_out: int = 128,
+                 normalize_bool: bool = True):
         super(Embed, self).__init__()
         self.linear = nn.Linear(dim_in, dim_out)
         self.l2norm = Normalize(2)
+        if normalize_bool:
+            print('Using normalization')
+        else:
+            print('Not using normalization')
+        self.normalize_bool = normalize_bool
 
     def forward(self, x):
         x = x.view(x.shape[0], -1)
         x = self.linear(x)
-        x = self.l2norm(x)
+        if self.normalize_bool:
+            x = self.l2norm(x)
         return x
 
 
