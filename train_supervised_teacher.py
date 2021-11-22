@@ -56,12 +56,14 @@ def parse_option():
         opt.learning_rate = 0.01
 
     # set the path according to the environment
+    # set the path according to the environment
+    opt.exp_path = '/data3/rschaef/pretrained_representation_distillation/save/'
     if hostname.startswith('visiongpu'):
-        opt.model_path = '/path/to/my/model'
-        opt.tb_path = '/path/to/my/tensorboard'
+        opt.model_path = '/path/to/my/student_model'
+        opt.tb_path = '/path/to/my/student_tensorboards'
     else:
-        opt.model_path = './save/models'
-        opt.tb_path = './save/tensorboard'
+        opt.model_path = os.path.join(opt.exp_path, 'supervised_teacher_model')
+        opt.tb_path = os.path.join(opt.exp_path, 'supervised_teacher_tensorboards')
 
     iterations = opt.lr_decay_epochs.split(',')
     opt.lr_decay_epochs = list([])
