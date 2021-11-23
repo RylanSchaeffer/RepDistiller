@@ -48,8 +48,8 @@ def init(model_s, model_t, init_modules, criterion, train_loader, logger, opt):
             input = input.float()
             if torch.cuda.is_available():
                 input = input.cuda()
-                target = target.cuda()
-                index = index.cuda()
+                # target = target.cuda()
+                # index = index.cuda()
                 if opt.distill in ['crd']:
                     contrast_idx = contrast_idx.cuda()
 

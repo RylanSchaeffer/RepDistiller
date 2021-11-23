@@ -22,20 +22,20 @@ import torch.optim as optim
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 
-from models import model_dict
+from models import architecture_dict
 from models.util import Embed, ConvReg, LinearEmbed
 from models.util import Connector, Translator, Paraphraser
 
-from dataset.cifar100 import get_cifar100_dataloaders, get_cifar100_dataloaders_sample
-
-from helper.util import adjust_learning_rate
-
-from distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, KernelRepresentationDistillation, VIDLoss, RKDLoss
-from distiller_zoo import PKT, ABLoss, FactorTransfer, KDSVD, FSP, NSTLoss
-from crd.criterion import CRDLoss
-
+import dataset.helpers
 from helper.loops import train_distill as train, validate
 from helper.pretrain import init
+from helper.util import adjust_learning_rate
+import models.helpers
+
+from distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, KernelRepresentationDistillation, \
+    VIDLoss, RKDLoss
+from distiller_zoo import PKT, ABLoss, FactorTransfer, KDSVD, FSP, NSTLoss
+from crd.criterion import CRDLoss
 
 
 def parse_option():
@@ -59,29 +59,26 @@ def parse_option():
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
 
     # dataset
-    parser.add_argument('--dataset', type=str, default='cifar100', choices=['cifar100'], help='dataset')
+    parser.add_argument('--pretrain_dataset', type=str, default='imagenet', choices=['imagenet'], help='dataset')
+    parser.add_argument('--finetune_dataset', type=str, default='cifar100', choices=['cifar100'], help='dataset')
 
     # model
-    parser.add_argument('--model_s', type=str, default='resnet8',
+    parser.add_argument('--student_architecture', type=str, default='resnet8x4',
                         choices=['resnet8', 'resnet14', 'resnet20', 'resnet32', 'resnet44', 'resnet56', 'resnet110',
                                  'resnet8x4', 'resnet32x4', 'wrn_16_1', 'wrn_16_2', 'wrn_40_1', 'wrn_40_2',
                                  'vgg8', 'vgg11', 'vgg13', 'vgg16', 'vgg19', 'ResNet50',
                                  'MobileNetV2', 'ShuffleV1', 'ShuffleV2'])
-    parser.add_argument('--path_t', type=str, default=None, help='teacher model snapshot')
+    parser.add_argument('--teacher_name', type=str, default=None, help='Name of teacher model',
+                        choices=['swav', 'simclr', 'byol', 'cpc_v2', 'clip'])
 
     # distillation
-    parser.add_argument('--distill', type=str, default='kd', choices=['kd', 'hint', 'attention', 'similarity',
-                                                                      'correlation', 'vid', 'crd',
-                                                                      'krd', 'kdsvd', 'fsp',
-                                                                      'rkd', 'pkt', 'abound', 'factor', 'nst'])
+    parser.add_argument('--distill', type=str, default='prd', choices=['hint', 'attention', 'similarity',
+                                                                       'correlation', 'vid', 'crd',
+                                                                       'prd', 'kdsvd', 'fsp',
+                                                                       'rkd', 'pkt', 'abound', 'factor', 'nst'])
     parser.add_argument('--trial', type=str, default='1', help='trial id')
 
-    parser.add_argument('--classification_weight', type=float, default=1., help='weight for classification')
-    parser.add_argument('--kl_div_weight', type=float, default=None, help='weight for KL Divergence')
     parser.add_argument('--custom_weight', type=float, default=None, help='weight balance for other losses')
-
-    # KL distillation
-    parser.add_argument('--kd_T', type=float, default=4, help='temperature for KD distillation')
 
     # NCE distillation
     parser.add_argument('--feat_dim', default=128, type=int, help='feature dimension')
@@ -100,11 +97,11 @@ def parse_option():
                         action='store_false')
 
     # pretrained representation distillation
-    parser.add_argument('--krd_primal_or_dual', default='primal', type=str, help='Whether to use Primal or Dual')
-    parser.add_argument('--krd_c', default=1e-1, type=float, help='Ridge regression weight')
-    parser.add_argument('--krd_normalize', dest='krd_normalize', default=False,
+    parser.add_argument('--prd_primal_or_dual', default='primal', type=str, help='Whether to use Primal or Dual')
+    parser.add_argument('--prd_c', default=1e-1, type=float, help='Ridge regression weight')
+    parser.add_argument('--prd_normalize', dest='prd_normalize', default=False,
                         action='store_true', help='Whether to normalize KRD representations')
-    parser.add_argument('--krd_dont_normalize', dest='krd_normalize', default=True,
+    parser.add_argument('--prd_dont_normalize', dest='prd_normalize', default=True,
                         action='store_false', help='Whether to normalize KRD representations')
 
     # hint layer
@@ -113,7 +110,7 @@ def parse_option():
     opt = parser.parse_args()
 
     # set different learning rate from these 4 models
-    if opt.model_s in ['MobileNetV2', 'ShuffleV1', 'ShuffleV2']:
+    if opt.student_architecture in ['MobileNetV2', 'ShuffleV1', 'ShuffleV2']:
         opt.learning_rate = 0.01
 
     # set the path according to the environment
@@ -122,19 +119,17 @@ def parse_option():
         opt.model_path = '/path/to/my/student_model'
         opt.tb_path = '/path/to/my/student_tensorboards'
     else:
-        opt.model_path = os.path.join(opt.exp_path, 'student_model')
-        opt.tb_path = os.path.join(opt.exp_path, 'student_tensorboards')
+        opt.model_path = os.path.join(opt.exp_path, 'selfsupervised_student_model')
+        opt.tb_path = os.path.join(opt.exp_path, 'selfsupervised_student_tensorboards')
 
     iterations = opt.lr_decay_epochs.split(',')
     opt.lr_decay_epochs = list([])
     for it in iterations:
         opt.lr_decay_epochs.append(int(it))
 
-    opt.model_t = get_teacher_name(opt.path_t)
-
-    opt.model_name = 'S:{}_T:{}_{}_{}_r:{}_a:{}_b:{}_{}'.format(
-        opt.model_s, opt.model_t, opt.dataset, opt.distill,
-        opt.classification_weight, opt.kl_div_weight, opt.custom_weight, opt.trial)
+    opt.model_name = 'S:{}_T:{}_{}_{}_{}_b:{}_{}'.format(
+        opt.student_architecture, opt.teacher_name, opt.pretrain_dataset, opt.finetune_dataset, opt.distill,
+        opt.custom_weight, opt.trial)
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
@@ -147,62 +142,41 @@ def parse_option():
     return opt
 
 
-def get_teacher_name(model_path):
-    """parse teacher name"""
-    segments = model_path.split('/')[-2].split('_')
-    if segments[0] != 'wrn':
-        return segments[0]
-    else:
-        return segments[0] + '_' + segments[1] + '_' + segments[2]
-
-
-def load_teacher(model_path, n_cls):
-    print('==> loading teacher model')
-    model_t = get_teacher_name(model_path)
-    model = model_dict[model_t](num_classes=n_cls)
-    model.load_state_dict(torch.load(model_path)['model'])
-    print('==> done')
-    return model
-
-
 def main():
     best_acc = 0
 
     opt = parse_option()
 
-    wandb.init(project='pretrained_representation_distillation',
-               config=opt)
+    # wandb.init(project='pretrained_representation_distillation',
+    #            config=opt)
 
     # tensorboard logger
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
 
-    # dataloader
-    if opt.dataset == 'cifar100':
-        if opt.distill in ['crd']:
-            train_loader, val_loader, n_data = get_cifar100_dataloaders_sample(
-                batch_size=opt.batch_size,
-                num_workers=opt.num_workers,
-                k=opt.nce_k,
-                mode=opt.mode,
-                negative_sampling=opt.crd_negative_sampling)
-        else:
-            train_loader, val_loader, n_data = get_cifar100_dataloaders(
-                batch_size=opt.batch_size,
-                num_workers=opt.num_workers,
-                is_instance=True)
-        n_cls = 100
-    else:
-        raise NotImplementedError(opt.dataset)
-
     # model
-    model_t = load_teacher(opt.path_t, n_cls)
-    model_s = model_dict[opt.model_s](num_classes=n_cls)
+    model_t, train_transform, eval_transform = models.helpers.load_selfsupervised_teacher(
+        teacher_name=opt.teacher_name,
+        pretrain_dataset=opt.pretrain_dataset)
+    model_s = architecture_dict[opt.student_architecture](num_classes=model_t.feat_dim)
 
-    data = torch.randn(2, 3, 32, 32)
-    model_t.eval()
-    model_s.eval()
-    feat_t, _ = model_t(data, is_feat=True)
-    feat_s, _ = model_s(data, is_feat=True)
+    # data = torch.randn(2, 3, 32, 32)
+    # model_t.eval()
+    # model_s.eval()
+    # feat_t, _ = model_t(data, is_feat=True)
+    # feat_s, _ = model_s(data, is_feat=True)
+
+    # dataloader
+    pretrain_train_dataloader, pretrain_val_dataloader, pretrain_n_cls = \
+        dataset.helpers.load_dataloaders(
+            dataset=opt.pretrain_dataset,
+            opt=opt,
+            train_transform=train_transform,
+            eval_transform=eval_transform)
+
+    # finetune_train_dataloader, finetune_val_dataloader, finetune_n_cls = \
+    #     dataset.helpers.load_dataloaders(
+    #         dataset=opt.finetune_dataset,
+    #         opt=opt)
 
     module_list = nn.ModuleList([])
     module_list.append(model_s)
@@ -241,11 +215,11 @@ def main():
         criterion_kd = NSTLoss()
     elif opt.distill == 'similarity':
         criterion_kd = Similarity()
-    elif opt.distill == 'krd':
+    elif opt.distill == 'prd':
         criterion_kd = KernelRepresentationDistillation(
-            primal_or_dual=opt.krd_primal_or_dual,
-            ridge_prefactor=opt.krd_c,
-            normalize=opt.krd_normalize)
+            primal_or_dual=opt.prd_primal_or_dual,
+            ridge_prefactor=opt.prd_c,
+            normalize=opt.prd_normalize)
     elif opt.distill == 'rkd':
         criterion_kd = RKDLoss()
     elif opt.distill == 'pkt':
@@ -362,7 +336,7 @@ def main():
             'test_acc': test_acc,
             'test_acc_top5': test_acc_top5,
             'test_loss': test_loss,
-            },
+        },
             step=epoch)
 
         # save the best model
@@ -373,7 +347,8 @@ def main():
                 'model': model_s.state_dict(),
                 'best_acc': best_acc,
             }
-            save_file = os.path.join(opt.save_folder, '{}_best.pth'.format(opt.model_s))
+            save_file = os.path.join(opt.save_folder, '{}_best.pth'.format(
+                opt.student_architecture))
             print('saving the best model!')
             torch.save(state, save_file)
 
@@ -385,7 +360,8 @@ def main():
                 'model': model_s.state_dict(),
                 'accuracy': test_acc,
             }
-            save_file = os.path.join(opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
+            save_file = os.path.join(opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(
+                epoch=epoch))
             torch.save(state, save_file)
 
     # This best accuracy is only for printing purpose.
@@ -397,7 +373,8 @@ def main():
         'opt': opt,
         'model': model_s.state_dict(),
     }
-    save_file = os.path.join(opt.save_folder, '{}_last.pth'.format(opt.model_s))
+    save_file = os.path.join(opt.save_folder, '{}_last.pth'.format(
+        opt.student_architecture))
     torch.save(state, save_file)
 
 

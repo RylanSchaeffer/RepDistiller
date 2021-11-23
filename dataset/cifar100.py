@@ -65,7 +65,10 @@ class CIFAR100Instance(datasets.CIFAR100):
 
 def get_cifar100_dataloaders(batch_size: int = 128,
                              num_workers=8,
-                             is_instance=False):
+                             is_instance=False,
+                             train_transform=None,
+                             eval_transform=None
+                             ):
     """
     cifar 100
     """
@@ -226,7 +229,9 @@ def get_cifar100_dataloaders_sample(batch_size=128,
                                     mode='exact',
                                     negative_sampling='different_class',
                                     is_sample=True,
-                                    percent=1.0):
+                                    percent=1.0,
+                                    train_transform=None,
+                                    eval_transform=None):
     """
     cifar 100
     """

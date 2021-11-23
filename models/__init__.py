@@ -6,7 +6,7 @@ from .mobilenetv2 import mobile_half
 from .ShuffleNetv1 import ShuffleV1
 from .ShuffleNetv2 import ShuffleV2
 
-model_dict = {
+architecture_dict = {
     'resnet8': resnet8,
     'resnet14': resnet14,
     'resnet20': resnet20,

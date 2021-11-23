@@ -11,7 +11,7 @@ import torch.optim as optim
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 
-from models import model_dict
+from models import architecture_dict
 
 from dataset.cifar100 import get_cifar100_dataloaders
 
@@ -99,7 +99,7 @@ def main():
         raise NotImplementedError(opt.dataset)
 
     # model
-    model = model_dict[opt.model](num_classes=n_cls)
+    model = architecture_dict[opt.model](num_classes=n_cls)
 
     # optimizer
     optimizer = optim.SGD(model.parameters(),

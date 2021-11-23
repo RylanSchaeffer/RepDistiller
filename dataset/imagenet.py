@@ -8,20 +8,21 @@ import socket
 import numpy as np
 from torch.utils.data import DataLoader
 from torchvision import datasets
-from torchvision import transforms
+import torchvision.transforms
+from typing import Tuple
 
 
 def get_data_folder():
     """
     return server-dependent path to store the data
     """
-    hostname = socket.gethostname()
-    if hostname.startswith('visiongpu'):
-        data_folder = '/data/vision/phillipi/rep-learn/datasets/imagenet'
-    elif hostname.startswith('yonglong-home'):
-        data_folder = '/home/yonglong/Data/data/imagenet'
-    else:
-        data_folder = './data/imagenet'
+    # hostname = socket.gethostname()
+    # if hostname.startswith('visiongpu'):
+    #     data_folder = '/data/vision/phillipi/rep-learn/datasets/imagenet'
+    # elif hostname.startswith('yonglong-home'):
+    #     data_folder = '/home/yonglong/Data/data/imagenet'
+    # else:
+    data_folder = '/data5/chengxuz/imagenet_raw/'
 
     if not os.path.isdir(data_folder):
         os.makedirs(data_folder)
@@ -32,6 +33,7 @@ def get_data_folder():
 class ImageFolderInstance(datasets.ImageFolder):
     """: Folder datasets which returns the index of the image as well::
     """
+
     def __getitem__(self, index):
         """
         Args:
@@ -52,6 +54,7 @@ class ImageFolderInstance(datasets.ImageFolder):
 class ImageFolderSample(datasets.ImageFolder):
     """: Folder datasets which returns (img, label, index, contrast_index):
     """
+
     def __init__(self, root, transform=None, target_transform=None,
                  is_sample=False, k=4096):
         super().__init__(root=root, transform=transform, target_transform=target_transform)
@@ -137,7 +140,7 @@ def get_test_loader(dataset='imagenet', batch_size=128, num_workers=8):
     return test_loader
 
 
-def get_dataloader_sample(dataset='imagenet', batch_size=128, num_workers=8, is_sample=False, k=4096):
+def get_imagenet_dataloaders_sample(dataset='imagenet', batch_size=128, num_workers=8, is_sample=False, k=4096):
     """Data Loader for ImageNet"""
 
     if dataset == 'imagenet':
@@ -183,40 +186,56 @@ def get_dataloader_sample(dataset='imagenet', batch_size=128, num_workers=8, is_
     return train_loader, test_loader, len(train_set), len(train_set.classes)
 
 
-def get_imagenet_dataloader(dataset='imagenet', batch_size=128, num_workers=16, is_instance=False):
+def get_imagenet_dataloaders(dataset='imagenet',
+                             batch_size=128,
+                             num_workers=16,
+                             is_instance=False,
+                             train_transform=None,
+                             eval_transform=None,
+                             ) -> Tuple[DataLoader, DataLoader, int]:
     """
     Data Loader for imagenet
     """
-    if dataset == 'imagenet':
-        data_folder = get_data_folder()
-    else:
-        raise NotImplementedError('dataset not supported: {}'.format(dataset))
+    assert dataset == 'imagenet'
+    data_folder = get_data_folder()
 
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+    normalize = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
-    train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(224),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        normalize,
-    ])
-    test_transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        normalize,
-    ])
+    if train_transform is None:
+        train_transform = torchvision.transforms.Compose([
+            torchvision.transforms.RandomResizedCrop(224),
+            torchvision.transforms.RandomHorizontalFlip(),
+            torchvision.transforms.ToTensor(),
+            normalize,
+        ])
+    if eval_transform is None:
+        eval_transform = torchvision.transforms.Compose([
+            torchvision.transforms.Resize(256),
+            torchvision.transforms.CenterCrop(224),
+            torchvision.transforms.ToTensor(),
+            normalize,
+        ])
 
     train_folder = os.path.join(data_folder, 'train')
-    test_folder = os.path.join(data_folder, 'val')
 
-    if is_instance:
-        train_set = ImageFolderInstance(train_folder, transform=train_transform)
-        n_data = len(train_set)
-    else:
-        train_set = datasets.ImageFolder(train_folder, transform=train_transform)
+    # if is_instance:
+    #     train_set = ImageFolderInstance(train_folder, transform=train_transform)
+    #     n_data = len(train_set)
+    # else:
+    train_set = datasets.ImageFolder(train_folder, transform=train_transform)
 
-    test_set = datasets.ImageFolder(test_folder, transform=test_transform)
+    # Raises error: RuntimeError: The archive ILSVRC2012_devkit_t12.tar.gz is not present in the root directory or is corrupted. You need to download it externally and place it in /data5/chengxuz/imagenet_raw/.
+    # train_set = datasets.ImageNet(root=data_folder,
+    #                               train=True,
+    #                               transform=train_transform)
+
+    eval_folder = os.path.join(data_folder, 'val')
+    eval_set = datasets.ImageFolder(eval_folder, transform=eval_transform)
+
+    # Raises RuntimeError: The archive ILSVRC2012_devkit_t12.tar.gz is not present in the root directory or is corrupted. You need to download it externally and place it in /data5/chengxuz/imagenet_raw/.
+    # test_set = datasets.ImageNet(root=data_folder,
+    #                              train=False,
+    #                              transform=eval_transform)
 
     train_loader = DataLoader(train_set,
                               batch_size=batch_size,
@@ -224,13 +243,13 @@ def get_imagenet_dataloader(dataset='imagenet', batch_size=128, num_workers=16, 
                               num_workers=num_workers,
                               pin_memory=True)
 
-    test_loader = DataLoader(test_set,
+    eval_loader = DataLoader(eval_set,
                              batch_size=batch_size,
                              shuffle=False,
-                             num_workers=num_workers//2,
+                             num_workers=num_workers // 2,
                              pin_memory=True)
 
     if is_instance:
-        return train_loader, test_loader, n_data
+        return train_loader, eval_loader, len(train_set)
     else:
-        return train_loader, test_loader
+        return train_loader, eval_loader, None
