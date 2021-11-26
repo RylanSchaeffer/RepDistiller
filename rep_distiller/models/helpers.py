@@ -3,6 +3,16 @@ import torch
 from . import architecture_dict
 
 
+def create_model_from_architecture_str(architecture_str: str,
+                                       output_dim: int,
+                                       ) -> torch.nn.Module:
+
+    model = architecture_dict[architecture_str](num_classes=output_dim)
+    # Ensure model has a self.feat_dim property
+    model.feat_dim = output_dim
+    return model
+
+
 def load_supervised_teacher(teacher_model_path: str,
                             num_classes: int,
                             ) -> torch.nn.Module:

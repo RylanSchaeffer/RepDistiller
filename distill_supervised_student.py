@@ -7,7 +7,7 @@ from __future__ import print_function
 import os
 
 # Ensure system GPU indices match PyTorch CUDA GPU indices
-import models.helpers
+import rep_distiller.models.helpers
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 # Control GPU Access
@@ -24,19 +24,19 @@ import torch.optim as optim
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 
-from models import architecture_dict
-from models.util import Embed, ConvReg, LinearEmbed
-from models.util import Connector, Translator, Paraphraser
+from rep_distiller.models import architecture_dict
+from rep_distiller.models import ConvReg, LinearEmbed
+from rep_distiller.models import Connector, Translator, Paraphraser
 
-from dataset.cifar100 import get_cifar100_dataloaders, get_cifar100_dataloaders_sample
+from rep_distiller.dataset.cifar100 import get_cifar100_dataloaders, get_cifar100_dataloaders_sample
 
 from helper.util import adjust_learning_rate
 
-from distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, KernelRepresentationDistillation, VIDLoss, RKDLoss
-from distiller_zoo import PKT, ABLoss, FactorTransfer, KDSVD, FSP, NSTLoss
-from crd.criterion import CRDLoss
+from rep_distiller.distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, KernelRepresentationDistillation, VIDLoss, RKDLoss
+from rep_distiller.distiller_zoo import PKT, ABLoss, FactorTransfer, KDSVD, FSP, NSTLoss
+from rep_distiller.crd import CRDLoss
 
-from helper.loops import train_distill as train, validate
+from helper.loops import train_epoch_distill as train, validate
 from helper.pretrain import init
 
 
@@ -132,7 +132,7 @@ def parse_option():
     for it in iterations:
         opt.lr_decay_epochs.append(int(it))
 
-    opt.model_t = models.helpers.get_teacher_name(opt.path_t)
+    opt.model_t = rep_distiller.models.helpers.get_teacher_name(opt.path_t)
 
     opt.model_name = 'S:{}_T:{}_{}_{}_r:{}_a:{}_b:{}_{}'.format(
         opt.model_s, opt.model_t, opt.dataset, opt.distill,
@@ -179,7 +179,7 @@ def main():
         raise NotImplementedError(opt.dataset)
 
     # model
-    model_t = models.helpers.load_supervised_teacher(opt.path_t, n_cls)
+    model_t = rep_distiller.models.helpers.load_supervised_teacher(opt.path_t, n_cls)
     model_s = architecture_dict[opt.model_s](num_classes=n_cls)
 
     data = torch.randn(2, 3, 32, 32)
@@ -322,7 +322,7 @@ def main():
         print("==> training...")
 
         time1 = time.time()
-        train_acc, train_loss, train_classification_loss, train_kd_loss, train_custom_loss = train(
+        train_acc, train_loss, train_classification_loss, train_kd_loss, train_custom_loss = train_epoch(
             epoch, train_loader, module_list, criterion_list, optimizer, opt)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
@@ -373,7 +373,7 @@ def main():
             torch.save(state, save_file)
 
     # This best accuracy is only for printing purpose.
-    # The results reported in the paper/README is from the last epoch. 
+    # The results reported in the paper/README is from the last epoch.
     print('best accuracy:', best_acc)
 
     # save model

@@ -2,8 +2,8 @@ import argparse
 from torch.utils.data.dataloader import DataLoader
 from typing import Tuple
 
-from dataset.cifar100 import get_cifar100_dataloaders, get_cifar100_dataloaders_sample
-from dataset.imagenet import get_imagenet_dataloaders, get_imagenet_dataloaders_sample
+from rep_distiller.dataset.cifar100 import get_cifar100_dataloaders, get_cifar100_dataloaders_sample
+from rep_distiller.dataset.imagenet import get_imagenet_dataloaders
 
 
 def load_dataloaders(dataset: str,
