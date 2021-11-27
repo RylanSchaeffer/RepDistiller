@@ -8,7 +8,7 @@ import os
 
 # Ensure system GPU indices match PyTorch CUDA GPU indices
 import rep_distiller.run.loops
-import rep_distiller.run.util
+import rep_distiller.run.helpers
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 # Control GPU Access
@@ -25,6 +25,8 @@ import torch.backends.cudnn as cudnn
 import wandb
 
 import rep_distiller.dataset.helpers
+# import rep_distiller.run.hooks
+import rep_distiller.losses
 import rep_distiller.models.helpers
 
 
@@ -143,8 +145,8 @@ def main():
 
     opt = parse_option()
 
-    wandb.init(project='pretrained_representation_distillation',
-               config=opt)
+    # wandb.init(project='pretrained_representation_distillation',
+    #            config=opt)
 
     # tensorboard logger
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
@@ -177,7 +179,7 @@ def main():
         'student': model_s,
     })
 
-    criteria_dict = rep_distiller.run.util.create_criteria(
+    criteria_dict = rep_distiller.losses.create_criteria_dict(
         opt=opt)
 
     # optimizer
@@ -191,6 +193,25 @@ def main():
         criteria_dict.cuda()
         cudnn.benchmark = True
 
+    # fn_hook_dict = rep_distiller.run.hooks.create_hook_fns_train(
+    #     start_grad_step=0,
+    #     num_grad_steps=opt.
+    # )
+    #
+    # rep_distiller.run.loops.run_hooks(
+    #     fn_hook_dict=fn_hook_dict,
+    #     models_dict=models_dict,
+    #     pretrain_train_loader=pretrain_train_loader,
+    #     pretrain_eval_loader=pretrain_eval_loader,
+    #     pretrain_epochs=opt.pretrain_epochs,
+    #     finetune_train_loader=finetune_train_loader,
+    #     finetune_eval_loader=finetune_eval_loader,
+    #     finetune_epochs=opt.finetune_epochs,
+    #     criteria_dict=criteria_dict,
+    #     optimizer=optimizer,
+    #     opt=opt,
+    # )
+
     rep_distiller.run.loops.pretrain_and_finetune(
         models_dict=models_dict,
         pretrain_train_loader=pretrain_train_loader,
@@ -199,7 +220,7 @@ def main():
         finetune_train_loader=finetune_train_loader,
         finetune_eval_loader=finetune_eval_loader,
         finetune_epochs=opt.finetune_epochs,
-        criteria_dict=criteria_dict,
+        losses_callables_dict=criteria_dict,
         optimizer=optimizer,
         opt=opt,
         logger=logger)

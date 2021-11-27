@@ -90,12 +90,13 @@ def get_cifar100_dataloaders(batch_size: int = 128,
                                      download=True,
                                      train=True,
                                      transform=train_transform)
-        n_data = len(train_set)
     else:
         train_set = datasets.CIFAR100(root=data_folder,
                                       download=True,
                                       train=True,
                                       transform=train_transform)
+    n_data = len(train_set)
+
     train_loader = DataLoader(train_set,
                               batch_size=batch_size,
                               shuffle=True,
@@ -110,10 +111,7 @@ def get_cifar100_dataloaders(batch_size: int = 128,
                              shuffle=False,
                              num_workers=int(num_workers / 2))
 
-    if is_instance:
-        return train_loader, test_loader, n_data
-    else:
-        return train_loader, test_loader
+    return train_loader, test_loader, n_data
 
 
 class CIFAR100InstanceSample(datasets.CIFAR100):

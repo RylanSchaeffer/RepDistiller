@@ -26,7 +26,7 @@ def load_dataloaders(dataset: str,
             train_loader, val_loader, n_data = get_cifar100_dataloaders(
                 batch_size=opt.batch_size,
                 num_workers=opt.num_workers,
-                is_instance=True,
+                is_instance=False,
                 train_transform=train_transform,
                 eval_transform=eval_transform)
     elif dataset == 'imagenet':

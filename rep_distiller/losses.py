@@ -1,100 +1,22 @@
-from __future__ import print_function
-
-from collections import defaultdict
 import torch
 import torch.nn as nn
-import numpy as np
+from typing import Callable, Dict
 
-from rep_distiller.distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, PretrainedRepresentationDistillation, \
-    VIDLoss, RKDLoss
-from rep_distiller.distiller_zoo import PKT, ABLoss, FactorTransfer, KDSVD, FSP, NSTLoss
-from rep_distiller.crd.criterion import CRDLoss
+from rep_distiller.distiller_zoo import DistillKL, PretrainedRepresentationDistillation
 
 
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-
-
-class Statistics:
-    def __init__(self):
-        self.meters = defaultdict(AverageMeter)
-
-    def update(self, batch_size=1, **kwargs):
-        for k, v in kwargs.items():
-            self.meters[k].update(v, batch_size)
-
-    def averages(self):
-        """
-        Compute averages from meters. Handle tensors vs floats (always return a
-        float)
-
-        Parameters
-        ----------
-        meters : Dict[str, util.AverageMeter]
-            Dict of average meters, whose averages may be of type ``float`` or ``torch.Tensor``
-
-        Returns
-        -------
-        metrics : Dict[str, float]
-            Average value of each metric
-        """
-        metrics = {m: vs.avg for m, vs in self.meters.items()}
-        metrics = {
-            m: v if isinstance(v, float) else v.item() for m, v in metrics.items()
-        }
-        return metrics
-
-    def __str__(self):
-        meter_str = ", ".join(f"{k}={v}" for k, v in self.meters.items())
-        return f"Statistics({meter_str})"
-
-
-def adjust_learning_rate_new(epoch, optimizer, LUT):
-    """
-    new learning rate schedule according to RotNet
-    """
-    lr = next((lr for (max_epoch, lr) in LUT if max_epoch > epoch), LUT[-1][1])
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-
-
-def adjust_learning_rate(epoch, opt, optimizer):
-    """Sets the learning rate to the initial LR decayed by decay rate every steep step"""
-    steps = np.sum(epoch > np.asarray(opt.lr_decay_epochs))
-    if steps > 0:
-        new_lr = opt.learning_rate * (opt.lr_decay_rate ** steps)
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = new_lr
-
-
-def create_criteria(opt,
-                    ) -> torch.nn.ModuleDict:
-
+def create_criteria_dict(opt,
+                         ) -> torch.nn.ModuleDict:
     # data = torch.randn(2, 3, 32, 32)
     # model_t.eval()
     # model_s.eval()
     # feat_t, _ = model_t(data, is_feat=True)
     # feat_s, _ = model_s(data, is_feat=True)
 
-    criterion_dict = nn.ModuleDict([])
-    # classification loss
-    criterion_dict['cross_entropy'] = nn.CrossEntropyLoss()
-    # KL divergence loss, original knowledge distillation
-    criterion_dict['knowledge_distillation'] = DistillKL(opt.kd_T)
+    criteria_dict = nn.ModuleDict({
+        'classification_loss': nn.CrossEntropyLoss(),
+        'knowledge_distillation_loss': DistillKL(opt.kd_T)
+    })
     if opt.distill == 'kd':
         criterion_kd = DistillKL(opt.kd_T)
     elif opt.distill == 'hint':
@@ -193,28 +115,62 @@ def create_criteria(opt,
         raise NotImplementedError(opt.distill)
 
     # other distillation loss
-    criterion_dict['custom'] = criterion_kd
+    criteria_dict['custom_loss'] = criterion_kd
 
-    return criterion_dict
-
-
-def accuracy(output, target, topk=(1,)):
-    """Computes the accuracy over the k top predictions for the specified values of k"""
-    with torch.no_grad():
-        maxk = max(topk)
-        batch_size = target.size(0)
-
-        _, pred = output.topk(maxk, 1, True, True)
-        pred = pred.t()
-        correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-        res = []
-        for k in topk:
-            # correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
-            correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
-            res.append(correct_k.mul_(100.0 / batch_size))
-        return res
+    return criteria_dict
 
 
-if __name__ == '__main__':
-    pass
+def compute_all_losses(output_tensors_by_model: Dict[str, torch.Tensor],
+                       target_tensors: torch.Tensor,
+                       losses_callables_dict: torch.nn.ModuleDict,
+                       losses_prefactors_dict: Dict[str, float],
+                       **kwargs) -> Dict[str, torch.Tensor]:
+    losses_dict = {}
+    total_loss = torch.tensor(0., requires_grad=True)
+    for loss_str, loss_prefactor in losses_prefactors_dict.items():
+        if loss_str == 'classification':
+            assert target_tensors is not None
+            classification_loss = losses_callables_dict['classification'](
+                model_outputs,
+                target=target_tensors, )
+            total_loss = total_loss + loss_prefactor * classification_loss
+        elif loss_str == 'knowledge_distillation':
+            raise NotImplementedError
+        else:
+            raise NotImplementedError
+
+    losses_dict['total_loss'] = total_loss
+    return losses_dict
+
+
+def compute_classification_loss(output_tensors_by_model: Dict[str, torch.Tensor],
+                                target_tensors: torch.Tensor,
+                                losses_callables_dict: torch.nn.ModuleDict,
+                                **kwargs,
+                                ) -> Dict[str, torch.Tensor]:
+    losses_by_model = dict()
+    for model_name, model_outputs in output_tensors_by_model.items():
+        total_loss = torch.tensor(0., requires_grad=True, device='cuda')
+        classification_loss = losses_callables_dict['classification_loss'](
+            input=output_tensors_by_model[model_name],
+            target=target_tensors)
+        total_loss = total_loss + classification_loss
+        losses_by_model[model_name] = dict(classification_loss=classification_loss,
+                                           total_loss=total_loss)
+    return losses_by_model
+
+
+def compute_pretrain_loss(output_tensors_by_model: Dict[str, torch.Tensor],
+                          losses_callables_dict: torch.nn.ModuleDict,
+                          **kwargs
+                          ) -> Dict[str, torch.Tensor]:
+    losses_by_model = dict()
+    total_loss = torch.tensor(0., requires_grad=True, device='cuda')
+    pretrained_distillation_loss = losses_callables_dict['custom_loss'](
+        output_tensors_by_model['student'],
+        output_tensors_by_model['teacher'])
+    total_loss = total_loss + pretrained_distillation_loss
+    losses_by_model['student'] = dict(
+        distillation_loss=pretrained_distillation_loss,
+        total_loss=total_loss)
+    return losses_by_model

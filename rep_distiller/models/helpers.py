@@ -1,6 +1,53 @@
+import copy
+import numpy as np
 import torch
+from typing import Dict, Tuple
 
 from . import architecture_dict
+from rep_distiller.models.readout import LinearReadout, MLPReadout
+
+
+def create_finetune_model(model: torch.nn.Module,
+                          dim_out: int,
+                          linear_or_nonlinear_readout: str = 'linear',
+                          train_only_readout: bool = True,
+                          ) -> Tuple[torch.nn.Module, torch.optim.Optimizer]:
+
+    assert linear_or_nonlinear_readout in {'linear', 'mlp'}
+
+    # https://discuss.pytorch.org/t/can-i-deepcopy-a-model/52192
+    model_copy = copy.deepcopy(model)
+
+    # First create model to fine-tune
+    if linear_or_nonlinear_readout == 'linear':
+        finetune_model = LinearReadout(
+            dim_in=model_copy.feat_dim,
+            dim_out=dim_out,
+            encoder=model,
+            only_readout=train_only_readout,
+        )
+    elif linear_or_nonlinear_readout == 'mlp':
+        # finetune_model = MLPReadout(
+        #     encoder=model,
+        #     only_readout=only_readout,
+        # )
+        raise NotImplementedError
+    else:
+        raise ValueError
+
+    if torch.cuda.is_available():
+        finetune_model = finetune_model.cuda()
+
+    if train_only_readout:
+        params = finetune_model.readout.parameters()
+    else:
+        params = finetune_model.parameters()
+
+    finetune_optimizer = torch.optim.SGD(
+        params,
+        lr=1e-3)
+
+    return finetune_model, finetune_optimizer
 
 
 def create_model_from_architecture_str(architecture_str: str,
@@ -47,6 +94,7 @@ def load_selfsupervised_teacher(teacher_name: str,
         else:
             raise NotImplementedError
         model = SwAV.load_from_checkpoint(weight_path, strict=True)
+        model.feat_dim = 2048
     elif teacher_name == 'simclr':
         # https://pytorch-lightning-bolts.readthedocs.io/en/latest/self_supervised_models.html#simclr
         from pl_bolts.models.self_supervised import SimCLR
