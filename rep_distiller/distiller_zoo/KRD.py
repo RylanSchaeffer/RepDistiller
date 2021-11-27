@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class KernelRepresentationDistillation(nn.Module):
+class PretrainedRepresentationDistillation(nn.Module):
     """Kernel Representation Distillation."""
 
     def __init__(self,
@@ -14,14 +14,15 @@ class KernelRepresentationDistillation(nn.Module):
                  normalize: bool):
         assert primal_or_dual in {'primal', 'dual'}
         assert ridge_prefactor > 0
-        super(KernelRepresentationDistillation, self).__init__()
+        super(PretrainedRepresentationDistillation, self).__init__()
         self.primal_or_dual = primal_or_dual
         self.ridge_prefactor = ridge_prefactor
         self.normalize = normalize
 
     def forward(self,
-                f_s,
-                f_t):
+                f_s: torch.Tensor,
+                f_t: torch.Tensor,
+                ) -> torch.Tensor:
         batch_size = f_s.shape[0]
         f_s = f_s.reshape(batch_size, -1)
         f_t = f_t.reshape(batch_size, -1)
@@ -44,7 +45,8 @@ class KernelRepresentationDistillation(nn.Module):
 
     @staticmethod
     def compute_primal_hat_matrix(X: torch.Tensor,
-                                  c: float = 1.0) -> torch.Tensor:
+                                  c: float = 0.1,
+                                  ) -> torch.Tensor:
         """
         Computes the primal hat matrix X (X^T X + c I)^{-1} X^T
 
@@ -65,7 +67,8 @@ class KernelRepresentationDistillation(nn.Module):
 
     @staticmethod
     def compute_dual_hat_matrix(X: torch.Tensor,
-                                c: float = 1.0) -> torch.Tensor:
+                                c: float = 0.1,
+                                ) -> torch.Tensor:
         """
         Computes the dual hat matrix X X^T (X X^T + c I)^{-1}
 

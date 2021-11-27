@@ -1,10 +1,11 @@
 from __future__ import print_function
 
+from collections import defaultdict
 import torch
 import torch.nn as nn
 import numpy as np
 
-from rep_distiller.distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, KernelRepresentationDistillation, \
+from rep_distiller.distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, PretrainedRepresentationDistillation, \
     VIDLoss, RKDLoss
 from rep_distiller.distiller_zoo import PKT, ABLoss, FactorTransfer, KDSVD, FSP, NSTLoss
 from rep_distiller.crd.criterion import CRDLoss
@@ -28,6 +29,40 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
+class Statistics:
+    def __init__(self):
+        self.meters = defaultdict(AverageMeter)
+
+    def update(self, batch_size=1, **kwargs):
+        for k, v in kwargs.items():
+            self.meters[k].update(v, batch_size)
+
+    def averages(self):
+        """
+        Compute averages from meters. Handle tensors vs floats (always return a
+        float)
+
+        Parameters
+        ----------
+        meters : Dict[str, util.AverageMeter]
+            Dict of average meters, whose averages may be of type ``float`` or ``torch.Tensor``
+
+        Returns
+        -------
+        metrics : Dict[str, float]
+            Average value of each metric
+        """
+        metrics = {m: vs.avg for m, vs in self.meters.items()}
+        metrics = {
+            m: v if isinstance(v, float) else v.item() for m, v in metrics.items()
+        }
+        return metrics
+
+    def __str__(self):
+        meter_str = ", ".join(f"{k}={v}" for k, v in self.meters.items())
+        return f"Statistics({meter_str})"
+
+
 def adjust_learning_rate_new(epoch, optimizer, LUT):
     """
     new learning rate schedule according to RotNet
@@ -46,7 +81,8 @@ def adjust_learning_rate(epoch, opt, optimizer):
             param_group['lr'] = new_lr
 
 
-def create_criteria(opt):
+def create_criteria(opt,
+                    ) -> torch.nn.ModuleDict:
 
     # data = torch.randn(2, 3, 32, 32)
     # model_t.eval()
@@ -54,9 +90,11 @@ def create_criteria(opt):
     # feat_t, _ = model_t(data, is_feat=True)
     # feat_s, _ = model_s(data, is_feat=True)
 
-    criterion_list = nn.ModuleList([])
-    criterion_cls = nn.CrossEntropyLoss()
-    criterion_div = DistillKL(opt.kd_T)
+    criterion_dict = nn.ModuleDict([])
+    # classification loss
+    criterion_dict['cross_entropy'] = nn.CrossEntropyLoss()
+    # KL divergence loss, original knowledge distillation
+    criterion_dict['knowledge_distillation'] = DistillKL(opt.kd_T)
     if opt.distill == 'kd':
         criterion_kd = DistillKL(opt.kd_T)
     elif opt.distill == 'hint':
@@ -88,7 +126,7 @@ def create_criteria(opt):
     elif opt.distill == 'similarity':
         criterion_kd = Similarity()
     elif opt.distill == 'prd':
-        criterion_kd = KernelRepresentationDistillation(
+        criterion_kd = PretrainedRepresentationDistillation(
             primal_or_dual=opt.prd_primal_or_dual,
             ridge_prefactor=opt.prd_c,
             normalize=opt.prd_normalize)
@@ -154,11 +192,10 @@ def create_criteria(opt):
     else:
         raise NotImplementedError(opt.distill)
 
-    criterion_list.append(criterion_cls)  # classification loss
-    criterion_list.append(criterion_div)  # KL divergence loss, original knowledge distillation
-    criterion_list.append(criterion_kd)  # other knowledge distillation loss
+    # other distillation loss
+    criterion_dict['custom'] = criterion_kd
 
-    return criterion_list
+    return criterion_dict
 
 
 def accuracy(output, target, topk=(1,)):

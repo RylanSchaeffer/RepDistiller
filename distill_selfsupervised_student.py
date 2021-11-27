@@ -22,6 +22,7 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
+import wandb
 
 import rep_distiller.dataset.helpers
 import rep_distiller.models.helpers
@@ -77,7 +78,7 @@ def parse_option():
     parser.add_argument('--kd_T', type=float, default=4, help='temperature for KD distillation')
 
     # NCE distillation
-    parser.add_argument('--feat_dim', default=128, type=int, help='feature dimension')
+    parser.add_argument('--feat_dim', default=512, type=int, help='feature dimension')
     parser.add_argument('--mode', default='exact', type=str, choices=['exact', 'relax'])
     parser.add_argument('--nce_k', default=16384, type=int, help='number of negative samples for NCE')
     parser.add_argument('--nce_t', default=0.07, type=float, help='temperature parameter for softmax')
@@ -142,8 +143,8 @@ def main():
 
     opt = parse_option()
 
-    # wandb.init(project='pretrained_representation_distillation',
-    #            config=opt)
+    wandb.init(project='pretrained_representation_distillation',
+               config=opt)
 
     # tensorboard logger
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
@@ -154,7 +155,7 @@ def main():
         pretrain_dataset=opt.pretrain_dataset)
     model_s = rep_distiller.models.helpers.create_model_from_architecture_str(
         architecture_str=opt.student_architecture,
-        output_dim=model_t.feat_dim)
+        output_dim=opt.feat_dim)
 
     # dataloader
     pretrain_train_loader, pretrain_eval_loader, pretrain_n_cls = \
@@ -176,9 +177,7 @@ def main():
         'student': model_s,
     })
 
-    pretrain_criteria_list = rep_distiller.run.util.create_criteria(
-        opt=opt)
-    finetune_criteria_list = rep_distiller.run.util.create_criteria(
+    criteria_dict = rep_distiller.run.util.create_criteria(
         opt=opt)
 
     # optimizer
@@ -189,20 +188,18 @@ def main():
 
     if torch.cuda.is_available():
         models_dict.cuda()
-        pretrain_criteria_list.cuda()
-        finetune_criteria_list.cuda()
+        criteria_dict.cuda()
         cudnn.benchmark = True
 
     rep_distiller.run.loops.pretrain_and_finetune(
         models_dict=models_dict,
         pretrain_train_loader=pretrain_train_loader,
         pretrain_eval_loader=pretrain_eval_loader,
-        pretrain_criteria_list=pretrain_criteria_list,
         pretrain_epochs=opt.pretrain_epochs,
         finetune_train_loader=finetune_train_loader,
         finetune_eval_loader=finetune_eval_loader,
-        finetune_criteria_list=finetune_criteria_list,
         finetune_epochs=opt.finetune_epochs,
+        criteria_dict=criteria_dict,
         optimizer=optimizer,
         opt=opt,
         logger=logger)

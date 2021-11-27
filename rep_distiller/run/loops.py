@@ -10,77 +10,79 @@ import torch
 import torch.optim
 import torch.backends.cudnn as cudnn
 from torch.utils.data.dataloader import DataLoader
+from typing import Callable, Dict, List, Tuple
+import wandb
 
 import rep_distiller.models.readout
 import rep_distiller.run.util
 
 
-def eval_epoch(models_dict: torch.nn.ModuleDict,
-               eval_loader: DataLoader,
-               criterion: torch.nn.ModuleList,
-               opt: argparse.Namespace):
-    """Eval one epoch."""
-    batch_time_by_model = {model_name: rep_distiller.run.util.AverageMeter()
-                           for model_name in models_dict}
-    total_losses_by_model = {model_name: rep_distiller.run.util.AverageMeter()
-                             for model_name in models_dict}
-    top1_acc_by_model = {model_name: rep_distiller.run.util.AverageMeter()
-                         for model_name in models_dict}
-    top5_acc_by_model = {model_name: rep_distiller.run.util.AverageMeter()
-                         for model_name in models_dict}
-
-    # switch to evaluate mode
-    models_dict.eval()
-
-    with torch.no_grad():
-        end = time.time()
-        for batch_idx, (input, target) in enumerate(eval_loader):
-
-            input = input.float()
-            if torch.cuda.is_available():
-                input = input.cuda()
-                target = target.cuda()
-
-            for model_name, model in models_dict:
-                # compute output
-                output = model(input)
-                loss = criterion(output, target)
-
-                # measure accuracy and record loss
-                acc1, acc5 = rep_distiller.run.util.accuracy(
-                    output,
-                    target,
-                    topk=(1, 5))
-
-                total_losses_by_model[model_name].update(loss.item(), input.size(0))
-                top1_acc_by_model[model_name].update(acc1[0], input.size(0))
-                top5_acc_by_model[model_name].update(acc5[0], input.size(0))
-
-            # measure elapsed time
-            batch_time_by_model[model_name].update(time.time() - end)
-            end = time.time()
-
-            if batch_idx % opt.print_freq == 0:
-                print('Test: [{0}/{1}]\t'
-                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                      'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-                      'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-                    batch_idx, len(eval_loader), batch_time=batch_time_by_model, loss=total_losses_by_model,
-                    top1=top1_acc_by_model, top5=top5_acc_by_model))
-
-        print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
-              .format(top1=top1_acc_by_model, top5=top5_acc_by_model))
-
-    avg_top1_acc_by_model = {model_name: top1_acc_by_model[model_name].avg
-                             for model_name in models_dict}
-    avg_top5_acc_by_model = {model_name: top5_acc_by_model[model_name].avg
-                             for model_name in models_dict}
-    avg_total_loss_by_model = {model_name: total_losses_by_model[model_name].avg
-                               for model_name in models_dict}
-
-    return avg_top1_acc_by_model, avg_top5_acc_by_model, avg_total_loss_by_model
-
+# def eval_epoch(models_dict: torch.nn.ModuleDict,
+#                eval_loader: DataLoader,
+#                criterion: torch.nn.ModuleList,
+#                opt: argparse.Namespace):
+#     """Eval one epoch."""
+#     batch_time_by_model = {model_name: rep_distiller.run.util.AverageMeter()
+#                            for model_name in models_dict}
+#     total_losses_by_model = {model_name: rep_distiller.run.util.AverageMeter()
+#                              for model_name in models_dict}
+#     top1_acc_by_model = {model_name: rep_distiller.run.util.AverageMeter()
+#                          for model_name in models_dict}
+#     top5_acc_by_model = {model_name: rep_distiller.run.util.AverageMeter()
+#                          for model_name in models_dict}
+#
+#     # switch to evaluate mode
+#     models_dict.eval()
+#
+#     with torch.no_grad():
+#         end = time.time()
+#         for batch_idx, (input, target) in enumerate(eval_loader):
+#
+#             input = input.float()
+#             if torch.cuda.is_available():
+#                 input = input.cuda()
+#                 target = target.cuda()
+#
+#             for model_name, model in models_dict:
+#                 # compute output
+#                 output = model(input)
+#                 loss = criterion(output, target)
+#
+#                 # measure accuracy and record loss
+#                 acc1, acc5 = rep_distiller.run.util.accuracy(
+#                     output,
+#                     target,
+#                     topk=(1, 5))
+#
+#                 total_losses_by_model[model_name].update(loss.item(), input.size(0))
+#                 top1_acc_by_model[model_name].update(acc1[0], input.size(0))
+#                 top5_acc_by_model[model_name].update(acc5[0], input.size(0))
+#
+#             # measure elapsed time
+#             batch_time_by_model[model_name].update(time.time() - end)
+#             end = time.time()
+#
+#             if batch_idx % opt.print_freq == 0:
+#                 print('Test: [{0}/{1}]\t'
+#                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+#                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+#                       'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+#                       'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
+#                     batch_idx, len(eval_loader), batch_time=batch_time_by_model, loss=total_losses_by_model,
+#                     top1=top1_acc_by_model, top5=top5_acc_by_model))
+#
+#         print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
+#               .format(top1=top1_acc_by_model, top5=top5_acc_by_model))
+#
+#     avg_top1_acc_by_model = {model_name: top1_acc_by_model[model_name].avg
+#                              for model_name in models_dict}
+#     avg_top5_acc_by_model = {model_name: top5_acc_by_model[model_name].avg
+#                              for model_name in models_dict}
+#     avg_total_loss_by_model = {model_name: total_losses_by_model[model_name].avg
+#                                for model_name in models_dict}
+#
+#     return avg_top1_acc_by_model, avg_top5_acc_by_model, avg_total_loss_by_model
+#
 
 def finetune(models_dict: torch.nn.ModuleDict,
              num_epochs: int,
@@ -92,9 +94,10 @@ def finetune(models_dict: torch.nn.ModuleDict,
              only_readout: bool = True,
              **kwargs,
              ):
-
     assert finetune_linear_or_nonlinear in {'linear', 'mlp'}
 
+    finetune_models_dicts = dict()
+    finetune_optimizers = dict()
     for model_name, model in models_dict.items():
 
         # https://discuss.pytorch.org/t/can-i-deepcopy-a-model/52192
@@ -104,7 +107,7 @@ def finetune(models_dict: torch.nn.ModuleDict,
         if finetune_linear_or_nonlinear == 'linear':
             finetune_model = rep_distiller.models.readout.LinearReadout(
                 dim_in=model_copy.feat_dim,
-                dim_out=np.unique(finetune_train_loader.dataset.targets),
+                dim_out=len(np.unique(finetune_train_loader.dataset.targets)),
                 encoder=model,
                 only_readout=only_readout,
             )
@@ -122,14 +125,20 @@ def finetune(models_dict: torch.nn.ModuleDict,
         else:
             params = finetune_model.parameters()
 
-        finetune_optimizer = torch.optim.SGD(
+        finetune_optimizers = torch.optim.SGD(
             params,
             lr=1e-3)
+
+        run_epoch(split='train',
+                  models_dict=torch.nn.ModuleDict({f'finetune_{model_name}': finetune_model}),
+                  criterion=10,
+                  loader=finetune_train_loader,
+                  optimizer=finetune_optimizers)
 
         # Then call train
         train(models_dict=torch.nn.ModuleDict({f'finetune_{model_name}': finetune_model}),
               num_epochs=num_epochs,
-              optimizer=finetune_optimizer,
+              optimizer=finetune_optimizers,
               opt=opt,
               train_loader=finetune_train_loader,
               eval_loader=finetune_eval_loader,
@@ -141,12 +150,11 @@ def finetune(models_dict: torch.nn.ModuleDict,
 def pretrain_and_finetune(models_dict: torch.nn.ModuleDict,
                           pretrain_train_loader: DataLoader,
                           pretrain_eval_loader: DataLoader,
-                          pretrain_criteria_list: torch.nn.ModuleList,
                           pretrain_epochs: int,
                           finetune_train_loader: DataLoader,
                           finetune_eval_loader: DataLoader,
-                          finetune_criteria_list: torch.nn.ModuleList,
                           finetune_epochs: int,
+                          criteria_dict: torch.nn.ModuleDict,
                           optimizer: torch.optim.Optimizer,
                           opt: argparse.Namespace,
                           logger,
@@ -155,59 +163,75 @@ def pretrain_and_finetune(models_dict: torch.nn.ModuleDict,
     Loop to alternate between pretraining and fine-tuning.
     """
 
-    # fine tune student and teacher
-    finetune(models_dict=models_dict,
-             num_epochs=finetune_epochs,
-             finetune_train_loader=finetune_train_loader,
-             finetune_eval_loader=finetune_eval_loader,
-             finetune_criteria_list=finetune_criteria_list,
-             opt=opt)
+    def compute_pretrain_loss(model_outputs: Dict[str, torch.Tensor],
+                              target: torch.Tensor,
+                              **kwargs
+                              ) -> Dict[str, torch.Tensor]:
+        del target
+        distillation_loss = criteria_dict['custom'](
+            model_outputs['student'],
+            model_outputs['teacher'])
+        total_loss = distillation_loss
+        losses = dict(distillation_loss=distillation_loss,
+                      total_loss=total_loss)
+        return losses
 
-    for epoch in range(1, pretrain_epochs + 1):
+    def compute_finetune_loss(model_outputs: Dict[str, torch.Tensor],
+                              target: torch.Tensor,
+                              criteria_dict: torch.nn.ModuleDict,
+                              **kwargs
+                              ) -> Dict[str, torch.Tensor]:
 
-        rep_distiller.run.util.adjust_learning_rate(epoch, opt, optimizer)
-        print("==> training...")
+        classification_loss = criteria_dict['cross_entropy'](
+            input=model_outputs['student_output'],
+            target=target, )
+        distillation_loss = criteria_dict['custom'](
+            input=model_outputs['student_output'],
+            target=model_outputs['teacher_output'])
 
-        time1 = time.time()
-        train_acc, train_loss, train_classification_loss, train_kd_loss, train_custom_loss = train_epoch_distill(
-            epoch,
-            pretrain_train_loader,
-            module_list,
-            pretrain_criteria_list,
-            optimizer,
-            opt)
-        time2 = time.time()
-        print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
+        losses = dict(classification_loss=classification_loss,
+                      distillation_loss=distillation_loss)
+        return losses
 
-        logger.log_value('train_acc', train_acc, epoch)
-        logger.log_value('train_loss', train_loss, epoch)
+    # # fine tune student and teacher
+    # finetune(models_dict=models_dict,
+    #          num_epochs=finetune_epochs,
+    #          finetune_train_loader=finetune_train_loader,
+    #          finetune_eval_loader=finetune_eval_loader,
+    #          finetune_criteria_list=finetune_criteria_list,
+    #          opt=opt)
 
-        test_acc, test_acc_top5, test_loss = eval_epoch(
-            pretrain_eval_loader, model_s, criterion_cls, opt)
+    best_total_loss = np.inf
 
-        logger.log_value('test_acc', test_acc, epoch)
-        logger.log_value('test_loss', test_loss, epoch)
-        logger.log_value('test_acc_top5', test_acc_top5, epoch)
+    for epoch_idx in range(1, pretrain_epochs + 1):
 
-        wandb.log({
-            'train_acc': train_acc,
-            'train_loss': train_loss,
-            'train_classification_loss': train_classification_loss,
-            'train_kl_div_loss': train_kd_loss,
-            'train_custom_loss': train_custom_loss,
-            'test_acc': test_acc,
-            'test_acc_top5': test_acc_top5,
-            'test_loss': test_loss,
-        },
-            step=epoch)
+        rep_distiller.run.util.adjust_learning_rate(epoch_idx, opt, optimizer)
+        print("==> pretraining...")
+        for split in ['pretrain_train', 'pretrain_eval']:
+            time1 = time.time()
+            epoch_avg_stats_by_model = run_epoch(
+                split=split,
+                models_dict=models_dict,
+                loader=pretrain_train_loader if split == 'pretrain_train' else pretrain_eval_loader,
+                optimizer=optimizer,
+                loss_fn=compute_pretrain_loss)
+            time2 = time.time()
+            print('epoch {}, split {}, loss: {}, total time {:.2f}'.format(
+                epoch_idx,
+                split,
+                epoch_avg_stats_by_model['total_loss'],
+                time2 - time1))
+
+            wandb.log({f'{split}_{k}': v for k, v in epoch_avg_stats_by_model.items()},
+                      step=epoch_idx)
 
         # save the best model
-        if test_acc > best_acc:
-            best_acc = test_acc
+        if epoch_avg_stats_by_model['total_loss'] > best_total_loss:
+            best_total_loss = epoch_avg_stats_by_model['total_loss']
             state = {
-                'epoch': epoch,
-                'model': model_s.state_dict(),
-                'best_acc': best_acc,
+                'epoch': epoch_idx,
+                'model': models_dict['student'].state_dict(),
+                'best_total_loss': best_total_loss,
             }
             save_file = os.path.join(opt.save_folder, '{}_best.pth'.format(
                 opt.student_architecture))
@@ -215,29 +239,20 @@ def pretrain_and_finetune(models_dict: torch.nn.ModuleDict,
             torch.save(state, save_file)
 
         # regular saving
-        if epoch % opt.save_freq == 0:
+        if epoch_idx % opt.save_freq == 0:
             print('==> Saving...')
             state = {
-                'epoch': epoch,
-                'model': model_s.state_dict(),
-                'accuracy': test_acc,
+                'epoch': epoch_idx,
+                'model': models_dict['student'].state_dict(),
+                'total_loss': epoch_avg_stats_by_model['total_loss'],
             }
             save_file = os.path.join(opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(
-                epoch=epoch))
+                epoch=epoch_idx))
             torch.save(state, save_file)
 
     # This best accuracy is only for printing purpose.
     # The results reported in the paper/README is from the last epoch.
-    print('best accuracy:', best_acc)
-
-    # save model
-    state = {
-        'opt': opt,
-        'model': model_s.state_dict(),
-    }
-    save_file = os.path.join(opt.save_folder, '{}_last.pth'.format(
-        opt.student_architecture))
-    torch.save(state, save_file)
+    print('best total loss:', best_total_loss)
 
 
 def pretrain(model_s, model_t, init_modules, criterion, train_loader, logger, opt):
@@ -326,6 +341,100 @@ def pretrain(model_s, model_t, init_modules, criterion, train_loader, logger, op
         sys.stdout.flush()
 
 
+def run_epoch(split: str,
+              models_dict: torch.nn.ModuleDict,
+              loss_fn: Callable,
+              loader: DataLoader,
+              optimizer: torch.optim.Optimizer,
+              ) -> Dict[str, float]:
+
+    assert split in {'pretrain_train', 'pretrain_eval', 'train', 'eval', 'test'}
+    training = split in {'pretrain_train', 'train'}
+    torch.set_grad_enabled(training)
+
+    if training:
+        models_dict.train()
+    else:
+        models_dict.eval()
+
+    stats_by_model = {model_name: rep_distiller.run.util.Statistics()
+                      for model_name in models_dict}
+
+    for batch_idx, (input_tensors, target_tensors) in enumerate(loader):
+
+        # TODO: Figure out what to do about SwAV-like transforms
+        # For different pretrained models (e.g. SwAV), the transforms map
+        # each sample into the batch into a list of many (e.g. 7) tensors.
+        # Here, we stack them and treat them as one big batch.
+        if isinstance(input_tensors, list):
+            # For now, use hack of taking all with shape (3, 36, 36)
+            input_tensors = torch.cat([input_tensor for input_tensor in input_tensors
+                                       if input_tensor.shape[1:] == (3, 36, 36)],
+                                      dim=0)
+
+        input_tensors = input_tensors.float()
+        if torch.cuda.is_available():
+            input_tensors = input_tensors.cuda()
+            target_tensors = target_tensors.cuda()
+
+        model_outputs = dict()
+        for model_name, model in models_dict.items():
+            output = model(input_tensors)
+            model_outputs[model_name] = output
+
+            # if split in {'train', 'eval', 'test'}:
+            #     # measure accuracy and record loss
+            #     acc1, acc5 = rep_distiller.run.util.accuracy(
+            #         output,
+            #         target_tensors,
+            #         topk=(1, 5))
+            #
+            #     stats_by_model[model_name].update(
+            #         loss=loss.item(),
+            #         top1_acc_by_model=acc1,
+            #         top5_acc_by_model=acc5,
+            #         batch_size=input_tensors.shape[0],
+            #     )
+
+        losses = loss_fn(model_outputs, target_tensors)
+
+        print('split {}, Batch {}, loss {}'.format(
+            split,
+            batch_idx,
+            losses['total_loss']))
+
+        if training:
+            optimizer.zero_grad()
+            losses['total_loss'].backward()
+            optimizer.step()
+
+            stats_by_model['student'].update(
+                distillation_loss=losses['distillation_loss'].item(),
+                total_loss=losses['total_loss'].item(),
+                batch_size=input_tensors.shape[0])
+
+        # if batch_idx % opt.print_freq == 0:
+        #     print('Test: [{0}/{1}]\t'
+        #           'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+        #           'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+        #           'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+        #           'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
+        #         batch_idx, len(eval_loader), batch_time=batch_time_by_model, loss=total_losses_by_model,
+        #         top1=top1_acc_by_model, top5=top5_acc_by_model))
+
+    # avg_top1_acc_by_model = {model_name: top1_acc_by_model[model_name].avg
+    #                          for model_name in models_dict}
+    # avg_top5_acc_by_model = {model_name: top5_acc_by_model[model_name].avg
+    #                          for model_name in models_dict}
+    # avg_total_loss_by_model = {model_name: total_losses_by_model[model_name].avg
+    #                            for model_name in models_dict}
+
+    avg_stats_by_model = {stats_by_model[model_name].averages()
+                          for model_name in stats_by_model}
+    # log_epoch_summary(epoch, split, avg_stats_by_model)
+    return avg_stats_by_model
+
+
 def train(models_dict,
           num_epochs: int,
           optimizer: torch.optim.Optimizer,
@@ -334,13 +443,12 @@ def train(models_dict,
           eval_loader: DataLoader,
           criteria_list: torch.nn.ModuleList,
           ):
-
     # routine
     for epoch in range(1, num_epochs + 1):
 
         # Initial eval
         finetune_acc, _, _ = eval_epoch(
-            eval_loader=finetune_eval_loader,
+            eval_loader=eval_loader,
             model=finetune_model,
             criterion=finetune_criteria_list,
             opt=opt)

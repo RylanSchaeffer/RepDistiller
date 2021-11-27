@@ -32,7 +32,7 @@ from rep_distiller.dataset.cifar100 import get_cifar100_dataloaders, get_cifar10
 
 from helper.util import adjust_learning_rate
 
-from rep_distiller.distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, KernelRepresentationDistillation, VIDLoss, RKDLoss
+from rep_distiller.distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, PretrainedRepresentationDistillation, VIDLoss, RKDLoss
 from rep_distiller.distiller_zoo import PKT, ABLoss, FactorTransfer, KDSVD, FSP, NSTLoss
 from rep_distiller.crd import CRDLoss
 
@@ -226,7 +226,7 @@ def main():
     elif opt.distill == 'similarity':
         criterion_kd = Similarity()
     elif opt.distill == 'krd':
-        criterion_kd = KernelRepresentationDistillation(
+        criterion_kd = PretrainedRepresentationDistillation(
             primal_or_dual=opt.krd_primal_or_dual,
             ridge_prefactor=opt.krd_c,
             normalize=opt.krd_normalize)

@@ -112,35 +112,36 @@ class ImageFolderSample(datasets.ImageFolder):
             return img, target, index
 
 
-def get_test_loader(dataset='imagenet', batch_size=128, num_workers=8):
-    """get the test data loader"""
-
-    if dataset == 'imagenet':
-        data_folder = get_data_folder()
-    else:
-        raise NotImplementedError('dataset not supported: {}'.format(dataset))
-
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
-    test_transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        normalize,
-    ])
-
-    test_folder = os.path.join(data_folder, 'val')
-    test_set = datasets.ImageFolder(test_folder, transform=test_transform)
-    test_loader = DataLoader(test_set,
-                             batch_size=batch_size,
-                             shuffle=False,
-                             num_workers=num_workers,
-                             pin_memory=True)
-
-    return test_loader
+# def get_test_loader(dataset='imagenet', batch_size=128, num_workers=8):
+#     """get the test data loader"""
+#
+#     if dataset == 'imagenet':
+#         data_folder = get_data_folder()
+#     else:
+#         raise NotImplementedError('dataset not supported: {}'.format(dataset))
+#
+#     normalize = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
+#                                                  std=[0.229, 0.224, 0.225])
+#     test_transform = torchvision.transforms.Compose([
+#         torchvision.transforms.Resize(256),
+#         torchvision.transforms.CenterCrop(224),
+#         torchvision.transforms.ToTensor(),
+#         normalize,
+#     ])
+#
+#     test_folder = os.path.join(data_folder, 'val')
+#     test_set = datasets.ImageFolder(test_folder, transform=test_transform)
+#     test_loader = DataLoader(test_set,
+#                              batch_size=batch_size,
+#                              shuffle=False,
+#                              num_workers=num_workers,
+#                              pin_memory=True)
+#
+#     return test_loader
 
 
 def get_imagenet_dataloaders_sample(dataset='imagenet', batch_size=128, num_workers=8, is_sample=False, k=4096):
+    # TODO: deduplicate with get_imagenet_dataloaders
     """Data Loader for ImageNet"""
 
     if dataset == 'imagenet':
@@ -149,18 +150,18 @@ def get_imagenet_dataloaders_sample(dataset='imagenet', batch_size=128, num_work
         raise NotImplementedError('dataset not supported: {}'.format(dataset))
 
     # add data transform
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+    normalize = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
-    train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(224),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
+    train_transform = torchvision.transforms.Compose([
+        torchvision.transforms.RandomResizedCrop(224),
+        torchvision.transforms.RandomHorizontalFlip(),
+        torchvision.transforms.ToTensor(),
         normalize,
     ])
-    test_transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
+    test_transform = torchvision.transforms.Compose([
+        torchvision.transforms.Resize(256),
+        torchvision.transforms.CenterCrop(224),
+        torchvision.transforms.ToTensor(),
         normalize,
     ])
     train_folder = os.path.join(data_folder, 'train')
@@ -192,15 +193,17 @@ def get_imagenet_dataloaders(dataset='imagenet',
                              is_instance=False,
                              train_transform=None,
                              eval_transform=None,
-                             ) -> Tuple[DataLoader, DataLoader, int]:
+                             ) -> [DataLoader, DataLoader, int]:
     """
     Data Loader for imagenet
     """
     assert dataset == 'imagenet'
     data_folder = get_data_folder()
 
-    normalize = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+    normalize = torchvision.transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225])
+
     if train_transform is None:
         train_transform = torchvision.transforms.Compose([
             torchvision.transforms.RandomResizedCrop(224),
@@ -208,6 +211,7 @@ def get_imagenet_dataloaders(dataset='imagenet',
             torchvision.transforms.ToTensor(),
             normalize,
         ])
+
     if eval_transform is None:
         eval_transform = torchvision.transforms.Compose([
             torchvision.transforms.Resize(256),
@@ -217,7 +221,6 @@ def get_imagenet_dataloaders(dataset='imagenet',
         ])
 
     train_folder = os.path.join(data_folder, 'train')
-
     # if is_instance:
     #     train_set = ImageFolderInstance(train_folder, transform=train_transform)
     #     n_data = len(train_set)
@@ -241,7 +244,8 @@ def get_imagenet_dataloaders(dataset='imagenet',
                               batch_size=batch_size,
                               shuffle=True,
                               num_workers=num_workers,
-                              pin_memory=True)
+                              # pin_memory=True,
+                              )
 
     eval_loader = DataLoader(eval_set,
                              batch_size=batch_size,
