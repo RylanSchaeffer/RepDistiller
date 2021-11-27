@@ -145,8 +145,8 @@ def main():
 
     opt = parse_option()
 
-    # wandb.init(project='pretrained_representation_distillation',
-    #            config=opt)
+    wandb.init(project='pretrained_representation_distillation',
+               config=opt)
 
     # tensorboard logger
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)

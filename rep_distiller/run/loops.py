@@ -307,6 +307,8 @@ def run_epoch_pretrain(split: str,
                 losses_by_model[model_name]['total_loss'].backward()
                 model_optimizer.step()
 
+        break
+
     avg_stats_by_model = {model_name: model_stats.averages()
                           for model_name, model_stats in stats_by_model.items()}
     return avg_stats_by_model
