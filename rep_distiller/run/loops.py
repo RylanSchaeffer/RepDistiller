@@ -54,6 +54,9 @@ def finetune(pretrain_epoch_idx: int,
                 wandb_dict.update(**{
                     f'{model_name}_{split}_{k}': v for k, v in
                     model_split_epoch_avg_stats.items()})
+
+        print(f'epoch: {pretrain_epoch_idx} Finetune Epoch: {finetune_epoch_idx}\n'
+              f'WandB Dict: {wandb_dict}')
         wandb.log(wandb_dict,
                   step=pretrain_epoch_idx)
 
@@ -75,7 +78,8 @@ def pretrain_and_finetune(models_dict: torch.nn.ModuleDict,
 
     best_total_loss = np.inf
 
-    for pretrain_epoch_idx in range(1, 1 + pretrain_epochs):
+    # for pretrain_epoch_idx in range(1, 1 + pretrain_epochs):
+    for pretrain_epoch_idx in range(pretrain_epochs):
 
         rep_distiller.run.helpers.adjust_learning_rate(pretrain_epoch_idx, opt, optimizer)
 
@@ -89,21 +93,20 @@ def pretrain_and_finetune(models_dict: torch.nn.ModuleDict,
                      opt=opt)
 
         wandb_dict = {}
-
         for split in ['pretrain_train', 'pretrain_eval']:
-            time1 = time.time()
+            start_time = time.time()
             split_epoch_avg_stats_by_model = run_epoch_pretrain(
                 split=split,
                 models_dict=models_dict,
                 loader=pretrain_train_loader if split == 'pretrain_train' else pretrain_eval_loader,
                 optimizers_dict={'student': optimizer},
                 losses_callables_dict=losses_callables_dict)
-            time2 = time.time()
+            end_time = time.time()
             print('epoch {}, split {}, student loss: {}, total time {:.2f}'.format(
                 pretrain_epoch_idx,
                 split,
                 split_epoch_avg_stats_by_model['student']['total_loss'],
-                time2 - time1))
+                end_time - start_time))
 
             for model_name, model_split_epoch_avg_stats in split_epoch_avg_stats_by_model.items():
                 wandb_dict.update(**{
@@ -306,8 +309,6 @@ def run_epoch_pretrain(split: str,
                 model_optimizer.zero_grad()
                 losses_by_model[model_name]['total_loss'].backward()
                 model_optimizer.step()
-
-        break
 
     avg_stats_by_model = {model_name: model_stats.averages()
                           for model_name, model_stats in stats_by_model.items()}
