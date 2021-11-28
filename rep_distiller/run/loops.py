@@ -111,7 +111,7 @@ def pretrain_and_finetune(models_dict: torch.nn.ModuleDict,
     Loop to alternate between pretraining and fine-tuning.
     """
 
-    best_total_loss = np.inf
+    best_student_eval_total_loss = np.inf
 
     # for pretrain_epoch_idx in range(1, 1 + pretrain_epochs):
     for pretrain_epoch_idx in range(pretrain_epochs):
@@ -127,7 +127,7 @@ def pretrain_and_finetune(models_dict: torch.nn.ModuleDict,
                      opt=opt)
 
         wandb_dict = {}
-        for split in ['pretrain_eval', 'pretrain_train']:
+        for split in ['pretrain_train', 'pretrain_eval']:
             start_time = time.time()
             split_epoch_avg_stats_by_model = run_epoch_pretrain(
                 split=split,
@@ -151,13 +151,14 @@ def pretrain_and_finetune(models_dict: torch.nn.ModuleDict,
                   step=rep_distiller.globals.num_gradient_steps)
 
         # save the best model
-        student_eval_loss = split_epoch_avg_stats_by_model['student']['total_loss']
-        if student_eval_loss > best_total_loss:
-            best_total_loss = student_eval_loss
+        # Will be eval because eval is the second in the loop.
+        student_eval_total_loss = split_epoch_avg_stats_by_model['student']['total_loss']
+        if student_eval_total_loss < best_student_eval_total_loss:
+            best_student_eval_total_loss = student_eval_total_loss
             state = {
                 'epoch': pretrain_epoch_idx,
                 'model': models_dict['student'].state_dict(),
-                'best_total_loss': best_total_loss,
+                'best_total_loss': best_student_eval_total_loss,
             }
             save_file = os.path.join(opt.save_folder, '{}_best.pth'.format(
                 opt.student_architecture))
@@ -170,13 +171,13 @@ def pretrain_and_finetune(models_dict: torch.nn.ModuleDict,
             state = {
                 'epoch': pretrain_epoch_idx,
                 'model': models_dict['student'].state_dict(),
-                'total_loss': student_eval_loss,
+                'total_loss': student_eval_total_loss,
             }
             save_file = os.path.join(opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(
                 epoch=pretrain_epoch_idx))
             torch.save(state, save_file)
 
-    print('best total loss:', best_total_loss)
+    print('best total loss:', best_student_eval_total_loss)
 
 
 def run_epoch_finetune(split: str,

@@ -23,7 +23,7 @@ def create_finetune_model(model: torch.nn.Module,
         finetune_model = LinearReadout(
             dim_in=model_copy.feat_dim,
             dim_out=dim_out,
-            encoder=model,
+            encoder=model_copy,
             only_readout=train_only_readout,
         )
     elif linear_or_nonlinear_readout == 'mlp':
