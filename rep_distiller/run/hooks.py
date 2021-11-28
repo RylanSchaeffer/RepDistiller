@@ -62,3 +62,4 @@ def create_hook_fns_train(start_grad_step: int,
 
 
 def hook_pretrain_train_epoch(hook_inputs: Dict):
+    raise NotImplementedError
