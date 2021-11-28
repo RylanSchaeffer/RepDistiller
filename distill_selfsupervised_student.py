@@ -12,7 +12,7 @@ import rep_distiller.run.helpers
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 # Control GPU Access
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 
 import argparse
 import socket
@@ -39,16 +39,17 @@ def parse_option():
     parser.add_argument('--tb_freq', type=int, default=500, help='tb frequency')
     parser.add_argument('--save_freq', type=int, default=40, help='save frequency')
     parser.add_argument('--batch_size', type=int, default=64, help='batch_size')
-    parser.add_argument('--num_workers', type=int, default=8, help='num of workers to use')
-    parser.add_argument('--pretrain_epochs', type=int, default=500,
+    # https://discuss.pytorch.org/t/docker-assertionerror-can-only-join-a-child-process/100807/4?u=rylanschaeffer
+    parser.add_argument('--num_workers', type=int, default=0, help='num of workers to use')
+    parser.add_argument('--pretrain_epochs', type=int, default=1000,
                         help='Number of epochs for pretraining')
-    parser.add_argument('--num_pretrain_epochs_per_finetune', type=int, default=10,
+    parser.add_argument('--num_pretrain_epochs_per_finetune', type=int, default=5,
                         help='Number of pretraining epochs per finetune run')
-    parser.add_argument('--finetune_epochs', type=int, default=20,
+    parser.add_argument('--finetune_epochs', type=int, default=3,
                         help='Number of epochs for fine tuning')
 
     # optimization
-    parser.add_argument('--learning_rate', type=float, default=0.05, help='learning rate')
+    parser.add_argument('--learning_rate', type=float, default=0.005, help='learning rate')
     parser.add_argument('--lr_decay_epochs', type=str, default='150,180,210', help='where to decay lr, can be a list')
     parser.add_argument('--lr_decay_rate', type=float, default=0.1, help='decay rate for learning rate')
     parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
