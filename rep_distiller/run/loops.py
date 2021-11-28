@@ -44,9 +44,9 @@ def finetune(models_dict: torch.nn.ModuleDict,
         optimizers_dict[f'finetune_{model_name}'] = finetune_optimizer
     finetune_models_dict = torch.nn.ModuleDict(finetune_models_dict)
 
-    finetune_results_dict = {'finetune_epoch_idx': []}
+    finetune_results_dict = {'finetune_epoch_idx': [],
+                             'model': []}
     for finetune_epoch_idx in range(num_epochs):
-        finetune_results_dict['finetune_epoch_idx'].append(finetune_epoch_idx)
         for split in ['eval', 'train']:
             split_epoch_avg_stats_by_model = run_epoch_finetune(
                 split=split,
@@ -56,29 +56,36 @@ def finetune(models_dict: torch.nn.ModuleDict,
                 optimizers_dict=optimizers_dict)
             for model_name, model_split_epoch_avg_stats in split_epoch_avg_stats_by_model.items():
                 for key, value in model_split_epoch_avg_stats.items():
-                    new_key = f'{model_name}_{split}_{key}'
+                    new_key = f'{split}_{key}'
                     if new_key not in finetune_results_dict:
                         finetune_results_dict[new_key] = [value]
                     else:
                         finetune_results_dict[new_key].append(value)
 
-    print(f'grad_steps: {rep_distiller.globals.num_gradient_steps} Finetune Epoch: {finetune_epoch_idx}\n'
-          f'WandB Dict: {finetune_results_dict}')
+        finetune_results_dict['model'].extend(list(split_epoch_avg_stats_by_model.keys()))
+        finetune_results_dict['finetune_epoch_idx'].extend([
+            finetune_epoch_idx for _ in range(len(split_epoch_avg_stats_by_model))])
 
     finetune_results_df = pd.DataFrame.from_dict(finetune_results_dict)
-    finetune_results_df['finetune_student_minus_teacher_eval_top_1_acc'] = \
-        finetune_results_df['finetune_student_eval_top_1_acc'] - finetune_results_df['finetune_teacher_eval_top_1_acc']
-    finetune_results_df['finetune_student_minus_teacher_eval_top_5_acc'] = \
-        finetune_results_df['finetune_student_eval_top_5_acc'] - finetune_results_df['finetune_teacher_eval_top_5_acc']
-
-    sns.lineplot(data=finetune_results_df,
-                 x='finetune_epoch_idx',
-                 y='finetune_student_minus_teacher_eval_top_1_acc')
-    plt.xlabel('Finetuning Epoch Index')
-    plt.ylabel('Student - Teacher Finetune Eval Top 1 Acc')
+    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(20, 12))
+    for split_idx, split in enumerate(['train', 'eval']):
+        for ax_idx, y in enumerate(['classification_loss', 'top_1_acc', 'top_5_acc']):
+            ax = axes[split_idx, ax_idx]
+            sns.lineplot(
+                data=finetune_results_df,
+                x='finetune_epoch_idx',
+                y=f'{split}_{y}',
+                hue='model',
+                ax=ax)
+            ax.set_xlabel('Finetune Epoch Index')
+            if y == f'{split}_classification_loss':
+                ax.set_ylabel(f'Finetune {split.capitalize()} Loss')
+            elif y == f'{split}_top_1_acc':
+                ax.set_ylabel(f'Finetune {split.capitalize()} Top 1 Acc')
+            elif y == f'{split}_top_5_acc':
+                ax.set_ylabel(f'Finetune {split.capitalize()} Top 5 Acc')
     # Convert to PIL to be able to save
     # See https://stackoverflow.com/a/61756899/4570472 and comment
-    fig = plt.gcf()
     fig.canvas.draw()
     pil_img = Image.frombytes('RGB',
                               fig.canvas.get_width_height(),
@@ -334,7 +341,7 @@ def run_epoch_pretrain(split: str,
                 model_optimizer.step()
                 rep_distiller.globals.num_gradient_steps += 1
 
-        # break
+        break
 
     avg_stats_by_model = {model_name: model_stats.averages()
                           for model_name, model_stats in stats_by_model.items()}
