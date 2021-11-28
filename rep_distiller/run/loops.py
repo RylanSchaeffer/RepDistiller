@@ -62,8 +62,8 @@ def finetune(models_dict: torch.nn.ModuleDict,
                     else:
                         finetune_results_dict[new_key].append(value)
 
-        print(f'grad_steps: {rep_distiller.globals.num_gradient_steps} Finetune Epoch: {finetune_epoch_idx}\n'
-              f'WandB Dict: {finetune_results_dict}')
+    print(f'grad_steps: {rep_distiller.globals.num_gradient_steps} Finetune Epoch: {finetune_epoch_idx}\n'
+          f'WandB Dict: {finetune_results_dict}')
 
     finetune_results_df = pd.DataFrame.from_dict(finetune_results_dict)
     finetune_results_df['finetune_student_minus_teacher_eval_top_1_acc'] = \
@@ -79,13 +79,14 @@ def finetune(models_dict: torch.nn.ModuleDict,
     # Convert to PIL to be able to save
     # See https://stackoverflow.com/a/61756899/4570472 and comment
     fig = plt.gcf()
-    fig.canvas.get_renderer()
+    fig.canvas.draw()
     pil_img = Image.frombytes('RGB',
                               fig.canvas.get_width_height(),
                               fig.canvas.tostring_rgb())
     wandb.log({'finetune_table': wandb.Table(dataframe=finetune_results_df),
                'finetune_learning_curve': wandb.Image(data_or_path=pil_img)},
               step=rep_distiller.globals.num_gradient_steps)
+    plt.close(fig=fig)
 
 
 def pretrain_and_finetune(models_dict: torch.nn.ModuleDict,
@@ -253,7 +254,7 @@ def run_epoch_finetune(split: str,
                 losses_by_model[model_name]['total_loss'].backward()
                 model_optimizer.step()
 
-        break
+        # break
 
     avg_stats_by_model = {model_name: model_stats.averages()
                           for model_name, model_stats in stats_by_model.items()}
@@ -333,7 +334,7 @@ def run_epoch_pretrain(split: str,
                 model_optimizer.step()
                 rep_distiller.globals.num_gradient_steps += 1
 
-        break
+        # break
 
     avg_stats_by_model = {model_name: model_stats.averages()
                           for model_name, model_stats in stats_by_model.items()}

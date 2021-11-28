@@ -43,13 +43,13 @@ def parse_option():
     parser.add_argument('--num_workers', type=int, default=0, help='num of workers to use')
     parser.add_argument('--pretrain_epochs', type=int, default=1000,
                         help='Number of epochs for pretraining')
-    parser.add_argument('--num_pretrain_epochs_per_finetune', type=int, default=5,
+    parser.add_argument('--num_pretrain_epochs_per_finetune', type=int, default=50,
                         help='Number of pretraining epochs per finetune run')
-    parser.add_argument('--finetune_epochs', type=int, default=3,
+    parser.add_argument('--finetune_epochs', type=int, default=30,
                         help='Number of epochs for fine tuning')
 
     # optimization
-    parser.add_argument('--learning_rate', type=float, default=0.005, help='learning rate')
+    parser.add_argument('--learning_rate', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--lr_decay_epochs', type=str, default='150,180,210', help='where to decay lr, can be a list')
     parser.add_argument('--lr_decay_rate', type=float, default=0.1, help='decay rate for learning rate')
     parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
