@@ -24,7 +24,7 @@ def create_finetune_model(model: torch.nn.Module,
             dim_in=model_copy.feat_dim,
             dim_out=dim_out,
             encoder=model_copy,
-            only_readout=train_only_readout,
+            train_only_readout=train_only_readout,
         )
     elif linear_or_nonlinear_readout == 'mlp':
         # finetune_model = MLPReadout(

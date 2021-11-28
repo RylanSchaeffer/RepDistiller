@@ -12,12 +12,12 @@ class MLPReadout(nn.Module):
                  use_bias: bool = True,
                  act=nn.LeakyReLU,
                  encoder: nn.Module = None,
-                 only_readout: bool = True, ):
+                 train_only_readout: bool = True, ):
 
         super(MLPReadout, self).__init__()
         self.encoder = encoder
-        self.only_readout = only_readout
-        if self.only_readout:
+        self.train_only_readout = train_only_readout
+        if self.train_only_readout:
             self.encoder.requires_grad_(False)
 
         mlp_layers = []
@@ -41,13 +41,13 @@ class LinearReadout(MLPReadout):
                  dim_out: int,
                  dim_in: int,
                  encoder: nn.Module = None,
-                 only_readout: bool = True,
+                 train_only_readout: bool = True,
                  use_bias: bool = True,
                  ):
 
         super(LinearReadout, self).__init__(
             sizes=(dim_in, dim_out),
             encoder=encoder,
-            only_readout=only_readout,
+            train_only_readout=train_only_readout,
             use_bias=use_bias,
         )
