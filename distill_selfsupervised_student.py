@@ -12,7 +12,7 @@ import rep_distiller.run.helpers
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 # Control GPU Access
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 
 import argparse
 import socket
@@ -40,11 +40,11 @@ def parse_option():
     parser.add_argument('--save_freq', type=int, default=40, help='save frequency')
     parser.add_argument('--batch_size', type=int, default=64, help='batch_size')
     parser.add_argument('--num_workers', type=int, default=8, help='num of workers to use')
-    parser.add_argument('--pretrain_epochs', type=int, default=240,
+    parser.add_argument('--pretrain_epochs', type=int, default=500,
                         help='Number of epochs for pretraining')
     parser.add_argument('--num_pretrain_epochs_per_finetune', type=int, default=10,
                         help='Number of pretraining epochs per finetune run')
-    parser.add_argument('--finetune_epochs', type=int, default=240,
+    parser.add_argument('--finetune_epochs', type=int, default=20,
                         help='Number of epochs for fine tuning')
 
     # optimization
@@ -141,7 +141,7 @@ def parse_option():
     return opt
 
 
-def main():
+def train():
 
     opt = parse_option()
 
@@ -227,4 +227,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    train()
