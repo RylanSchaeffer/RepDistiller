@@ -12,7 +12,7 @@ import rep_distiller.run.helpers
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 # Control GPU Access
-os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5,6,7,8,9"
 
 import argparse
 import socket
@@ -38,18 +38,19 @@ def parse_option():
     parser.add_argument('--print_freq', type=int, default=100, help='print frequency')
     parser.add_argument('--tb_freq', type=int, default=500, help='tb frequency')
     parser.add_argument('--save_freq', type=int, default=40, help='save frequency')
-    parser.add_argument('--batch_size', type=int, default=64, help='batch_size')
+    parser.add_argument('--batch_size', type=int, default=100, help='batch_size')
+    # Weird AssertionError appears but is ignored; setting num_workers to 0 blocks it
     # https://discuss.pytorch.org/t/docker-assertionerror-can-only-join-a-child-process/100807/4?u=rylanschaeffer
     parser.add_argument('--num_workers', type=int, default=0, help='num of workers to use')
     parser.add_argument('--pretrain_epochs', type=int, default=1000,
                         help='Number of epochs for pretraining')
     parser.add_argument('--num_pretrain_epochs_per_finetune', type=int, default=50,
                         help='Number of pretraining epochs per finetune run')
-    parser.add_argument('--finetune_epochs', type=int, default=30,
+    parser.add_argument('--finetune_epochs', type=int, default=100,
                         help='Number of epochs for fine tuning')
 
     # optimization
-    parser.add_argument('--learning_rate', type=float, default=1e-3, help='learning rate')
+    parser.add_argument('--learning_rate', type=float, default=1e-4, help='learning rate')
     parser.add_argument('--lr_decay_epochs', type=str, default='150,180,210', help='where to decay lr, can be a list')
     parser.add_argument('--lr_decay_rate', type=float, default=0.1, help='decay rate for learning rate')
     parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
@@ -64,7 +65,7 @@ def parse_option():
                         choices=['resnet8', 'resnet14', 'resnet20', 'resnet32', 'resnet44', 'resnet56', 'resnet110',
                                  'resnet8x4', 'resnet32x4', 'wrn_16_1', 'wrn_16_2', 'wrn_40_1', 'wrn_40_2',
                                  'vgg8', 'vgg11', 'vgg13', 'vgg16', 'vgg19', 'ResNet50',
-                                 'MobileNetV2', 'ShuffleV1', 'ShuffleV2'])
+                                 'MobileNetV2', 'ShuffleV1', 'ShuffleV2', 'swav', 'simclr'])
     parser.add_argument('--teacher_name', type=str, default=None, help='Name of teacher model',
                         choices=['swav', 'simclr', 'byol', 'cpc_v2', 'clip'])
 
@@ -153,12 +154,9 @@ def train():
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
 
     # model
-    model_t, train_transform, eval_transform = rep_distiller.models.helpers.load_selfsupervised_teacher(
-        teacher_name=opt.teacher_name,
+    model_t, train_transform, eval_transform = rep_distiller.models.helpers.load_selfsupervised_pretrained_model(
+        model_name=opt.teacher_name,
         pretrain_dataset=opt.pretrain_dataset)
-    model_s = rep_distiller.models.helpers.create_model_from_architecture_str(
-        architecture_str=opt.student_architecture,
-        output_dim=opt.feat_dim)
 
     # dataloader
     pretrain_train_loader, pretrain_eval_loader, pretrain_n_cls = \
@@ -173,21 +171,25 @@ def train():
             dataset=opt.finetune_dataset,
             opt=opt)
 
-    models_dict = nn.ModuleDict({
-        'student': model_s,
-        'teacher': model_t})
-    trainable_dict = nn.ModuleDict({
-        'student': model_s,
-    })
-
-    criteria_dict = rep_distiller.losses.create_criteria_dict(
-        opt=opt)
+    model_s = rep_distiller.models.helpers.create_model_from_architecture_str(
+        architecture_str=opt.student_architecture,
+        output_dim=opt.feat_dim,
+        num_samples=len(pretrain_train_loader),
+        batch_size=opt.batch_size,
+        dataset_str=opt.pretrain_dataset)
 
     # optimizer
-    optimizer = optim.SGD(trainable_dict.parameters(),
+    optimizer = optim.SGD(model_s.parameters(),
                           lr=opt.learning_rate,
                           momentum=opt.momentum,
                           weight_decay=opt.weight_decay)
+
+    models_dict = nn.ModuleDict({
+        'student': model_s,
+        'teacher': model_t})
+
+    criteria_dict = rep_distiller.losses.create_criteria_dict(
+        opt=opt)
 
     if torch.cuda.is_available():
         models_dict.cuda()

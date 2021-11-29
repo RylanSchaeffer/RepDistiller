@@ -1,3 +1,4 @@
+import argparse
 import copy
 import numpy as np
 import torch
@@ -52,11 +53,37 @@ def create_finetune_model(model: torch.nn.Module,
 
 def create_model_from_architecture_str(architecture_str: str,
                                        output_dim: int,
+                                       num_samples: int,
+                                       batch_size: int,
+                                       dataset_str: str,
+                                       gpus: int = 4,
                                        ) -> torch.nn.Module:
 
-    model = architecture_dict[architecture_str](num_classes=output_dim)
-    # Ensure model has a self.feat_dim property
-    model.feat_dim = output_dim
+    if architecture_str == 'swav':
+        from pl_bolts.models.self_supervised import SwAV
+
+        model = SwAV(
+            num_samples=num_samples,
+            batch_size=batch_size,
+            dataset=dataset_str,
+            gpus=gpus,
+            feat_dim=output_dim)
+
+    elif architecture_str == 'simclr':
+
+        from pl_bolts.models.self_supervised import SimCLR
+
+        model = SimCLR(
+            num_samples=num_samples,
+            batch_size=batch_size,
+            dataset=dataset_str,
+            gpus=gpus,
+            feat_dim=output_dim)
+    else:
+        model = architecture_dict[architecture_str](num_classes=output_dim)
+        # Ensure model has a self.feat_dim property
+
+        model.feat_dim = output_dim
     return model
 
 
@@ -71,12 +98,12 @@ def load_supervised_teacher(teacher_model_path: str,
     return model
 
 
-def load_selfsupervised_teacher(teacher_name: str,
-                                pretrain_dataset: str,
-                                ) -> torch.nn.Module:
+def load_selfsupervised_pretrained_model(model_name: str,
+                                         pretrain_dataset: str,
+                                         ) -> torch.nn.Module:
     print('==> loading teacher model')
 
-    if teacher_name == 'swav':
+    if model_name == 'swav':
         # https://pytorch-lightning-bolts.readthedocs.io/en/latest/self_supervised_models.html#swav
         from pl_bolts.models.self_supervised import SwAV
         from pl_bolts.models.self_supervised.swav.transforms import (SwAVTrainDataTransform, SwAVEvalDataTransform)
@@ -94,18 +121,22 @@ def load_selfsupervised_teacher(teacher_name: str,
         else:
             raise NotImplementedError
         model = SwAV.load_from_checkpoint(weight_path, strict=True)
+        # add feat_dim property for later readout
         model.feat_dim = 2048
-    elif teacher_name == 'simclr':
+    elif model_name == 'simclr':
         # https://pytorch-lightning-bolts.readthedocs.io/en/latest/self_supervised_models.html#simclr
         from pl_bolts.models.self_supervised import SimCLR
         weight_path = 'https://pl-bolts-weights.s3.us-east-2.amazonaws.com/simclr/bolts_simclr_imagenet/simclr_imagenet.ckpt'
         model = SimCLR.load_from_checkpoint(weight_path, strict=False)
+        model.feat_dim = 2048
         from pl_bolts.models.self_supervised.simclr.transforms import (
             SimCLREvalDataTransform, SimCLRTrainDataTransform)
-        # TODO: What are these 32s
-        train_transform = SimCLRTrainDataTransform(32)
-        eval_transform = SimCLREvalDataTransform(32)
-    elif teacher_name == 'cpc_v2':
+        # TODO: Why are the input heights 32s? 36 seems to be the norm for SwAV
+        # train_transform = SimCLRTrainDataTransform(32)
+        # eval_transform = SimCLREvalDataTransform(32)
+        train_transform = SimCLRTrainDataTransform(input_height=36)
+        eval_transform = SimCLREvalDataTransform(input_height=36)
+    elif model_name == 'cpc_v2':
         from pl_bolts.models.self_supervised import CPC_v2
         if pretrain_dataset == 'cifar10':
             weight_path = 'https://pl-bolts-weights.s3.us-east-2.amazonaws.com/cpc/cpc-cifar10-v4-exp3/epoch%3D474.ckpt'
@@ -130,16 +161,35 @@ def load_selfsupervised_teacher(teacher_name: str,
         else:
             raise NotImplementedError
         model = CPC_v2.load_from_checkpoint(weight_path, strict=False)
-    elif teacher_name == 'byol':
+    elif model_name == 'byol':
         raise NotImplementedError
-    elif teacher_name == 'clip':
+    elif model_name == 'clip':
         import clip
 
         # Check available models
         # clip.available_models()
+        # ['RN50', 'RN101', 'RN50x4', 'RN50x16', 'ViT-B/32', 'ViT-B/16']
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        model, preprocess = clip.load("ViT-B/32", device=device)
+        clip_image_and_text_model, preprocess = clip.load("ViT-B/32", device=device)
+
+        import pytorch_lightning as pl
+
+        class CLIPImageEncoder(pl.LightningModule):
+
+            def __init__(self,
+                         clip_image_and_text_model):
+                super().__init__()
+                self.clip_image_and_text_model = clip_image_and_text_model
+                self.feat_dim = clip_image_and_text_model.visual.output_dim
+
+            def forward(self,
+                        x: torch.Tensor,
+                        ) -> torch.Tensor:
+                x = self.clip_image_and_text_model.encode_image(x)
+                return x
+
+        model = CLIPImageEncoder(clip_image_and_text_model=clip_image_and_text_model)
 
         # image_features = model.encode_image(image)
 
@@ -148,7 +198,9 @@ def load_selfsupervised_teacher(teacher_name: str,
     else:
         raise NotImplementedError
 
-    model.freeze()
+    # PyTorch Lightning Modules have freeze
+    if hasattr(model, 'freeze'):
+        model.freeze()
 
     print('==> done')
     return model, train_transform, eval_transform

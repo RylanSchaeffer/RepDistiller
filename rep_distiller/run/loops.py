@@ -48,6 +48,7 @@ def finetune(models_dict: torch.nn.ModuleDict,
                              'model': []}
     for finetune_epoch_idx in range(num_epochs):
         for split in ['eval', 'train']:
+            print(f'Finetune Epoch: {finetune_epoch_idx}\tSplit: {split}')
             split_epoch_avg_stats_by_model = run_epoch_finetune(
                 split=split,
                 models_dict=finetune_models_dict,
@@ -220,9 +221,7 @@ def run_epoch_finetune(split: str,
 
         output_tensors_by_model = dict()
         for model_name, model in models_dict.items():
-            start_time = time.time()
             model_output_tensors = model(input_tensors)
-            end_time = time.time()
             output_tensors_by_model[model_name] = model_output_tensors
             stats_by_model[model_name].update(
                 batch_size=input_tensors.shape[0])

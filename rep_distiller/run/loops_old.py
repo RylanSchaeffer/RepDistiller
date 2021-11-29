@@ -109,7 +109,7 @@ def finetune(models_dict: torch.nn.ModuleDict,
                 dim_in=model_copy.feat_dim,
                 dim_out=len(np.unique(finetune_train_loader.dataset.targets)),
                 encoder=model,
-                only_readout=only_readout,
+                train_only_readout=only_readout,
             )
         elif finetune_linear_or_nonlinear == 'mlp':
             # finetune_model = rep_distiller.models.classifier.MLPReadout(

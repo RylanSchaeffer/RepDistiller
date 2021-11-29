@@ -17,6 +17,7 @@ class MLPReadout(nn.Module):
         super(MLPReadout, self).__init__()
         self.encoder = encoder
         self.train_only_readout = train_only_readout
+        self.act_callable = act()
         if self.train_only_readout:
             self.encoder.requires_grad_(False)
 
@@ -32,6 +33,7 @@ class MLPReadout(nn.Module):
                 ) -> torch.Tensor:
         if self.encoder is not None:
             x = self.encoder(x)
+            x = self.act_callable(x)
         return self.readout(x)
 
 
