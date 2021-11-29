@@ -193,11 +193,11 @@ def run_epoch_finetune(split: str,
     training = split in {'train'}
     torch.set_grad_enabled(training)
 
-    for model_name, model in models_dict.items():
-        if training:
-            model.train()
-        else:
-            models_dict.eval()
+    if training:
+        models_dict.train()
+    else:
+        # Deactivate batch norm
+        models_dict.eval()
 
     stats_by_model = {model_name: rep_distiller.run.helpers.Statistics()
                       for model_name in models_dict}
@@ -280,11 +280,14 @@ def run_epoch_pretrain(split: str,
     # Are we training?
     training = split in {'pretrain_train'}
     torch.set_grad_enabled(training)
-    for model_name, model in models_dict.items():
-        if training:
-            model.train()
-        else:
-            models_dict.eval()
+
+    if training:
+        models_dict['teacher'].eval()
+        models_dict['student'].train()
+    else:
+        # Deactivate batch norm
+        models_dict['teacher'].eval()
+        models_dict['student'].eval()
 
     stats_by_model = {model_name: rep_distiller.run.helpers.Statistics()
                       for model_name in models_dict}
@@ -293,8 +296,9 @@ def run_epoch_pretrain(split: str,
 
         # TODO: Figure out what to do about SwAV-like transforms
         # For different pretrained models (e.g. SwAV), the transforms map
-        # each sample into the batch into a list of many (e.g. 7) tensors.
-        # Here, we stack them and treat them as one big batch.
+        # each sample into the batch into a list of several (e.g. 7) tensors.
+        # I don't (yet) know why. My temporary workaround is to stack them
+        # and treat them as one big batch.
         if isinstance(input_tensors, list):
             # For now, use hack of taking all with shape (3, 36, 36)
             input_tensors = torch.cat([input_tensor for input_tensor in input_tensors
@@ -322,7 +326,6 @@ def run_epoch_pretrain(split: str,
         for model_name, model_losses in losses_by_model.items():
             stats_by_model[model_name].update(**{
                 k: v.item() for k, v in model_losses.items()})
-
 
         # if batch_idx % opt.print_freq == 0:
         #             # 'Loss {loss.val:.4f} ({loss.avg:.4f})\t'

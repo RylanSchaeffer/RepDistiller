@@ -232,7 +232,7 @@ def get_imagenet_dataloaders(dataset='imagenet',
     #                               train=True,
     #                               transform=train_transform)
 
-    eval_folder = os.path.join(data_folder, 'val')
+    eval_folder = os.path.join(data_folder, 'validation')
     eval_set = datasets.ImageFolder(eval_folder, transform=eval_transform)
 
     # Raises RuntimeError: The archive ILSVRC2012_devkit_t12.tar.gz is not present in the root directory or is corrupted. You need to download it externally and place it in /data5/chengxuz/imagenet_raw/.

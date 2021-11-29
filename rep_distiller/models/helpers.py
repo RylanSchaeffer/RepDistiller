@@ -60,6 +60,7 @@ def create_model_from_architecture_str(architecture_str: str,
                                        ) -> torch.nn.Module:
 
     if architecture_str == 'swav':
+
         from pl_bolts.models.self_supervised import SwAV
 
         model = SwAV(
@@ -111,6 +112,7 @@ def load_selfsupervised_pretrained_model(model_name: str,
             weight_path = 'https://pl-bolts-weights.s3.us-east-2.amazonaws.com/swav/swav_imagenet/swav_imagenet.pth.tar'
             train_transform = SwAVTrainDataTransform()
             eval_transform = SwAVEvalDataTransform()
+            # eval_transform = SwAVTrainDataTransform()
         elif pretrain_dataset == 'stl10':
             weight_path = 'https://pl-bolts-weights.s3.us-east-2.amazonaws.com/swav/checkpoints/swav_stl10.pth.tar'
             from pl_bolts.transforms.dataset_normalizations import stl10_normalization
