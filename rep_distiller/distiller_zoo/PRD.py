@@ -46,23 +46,23 @@ class PretrainedRepresentationDistillation(nn.Module):
         else:
             raise ValueError
 
-        fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
-        for ax_idx, (model_str, H) in enumerate([('S', H_s), ('T', H_t)]):
-            ax = axes[ax_idx]
-            ax.set_title(rf'H_{model_str}')
-            sns.heatmap(H.cpu().detach().numpy(),
-                        ax=ax,
-                        cmap="coolwarm",
-                        center=0.)
-        # Convert to PIL to be able to save
-        # See https://stackoverflow.com/a/61756899/4570472 and comment
-        fig.canvas.draw()
-        pil_img = Image.frombytes('RGB',
-                                  fig.canvas.get_width_height(),
-                                  fig.canvas.tostring_rgb())
-        wandb.log({'pretrain_hat_matrices': wandb.Image(data_or_path=pil_img)},
-                  step=rep_distiller.globals.num_gradient_steps)
-        plt.close(fig=fig)
+        # fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
+        # for ax_idx, (model_str, H) in enumerate([('S', H_s), ('T', H_t)]):
+        #     ax = axes[ax_idx]
+        #     ax.set_title(rf'H_{model_str}')
+        #     sns.heatmap(H.cpu().detach().numpy(),
+        #                 ax=ax,
+        #                 cmap="coolwarm",
+        #                 center=0.)
+        # # Convert to PIL to be able to save
+        # # See https://stackoverflow.com/a/61756899/4570472 and comment
+        # fig.canvas.draw()
+        # pil_img = Image.frombytes('RGB',
+        #                           fig.canvas.get_width_height(),
+        #                           fig.canvas.tostring_rgb())
+        # wandb.log({'pretrain_hat_matrices': wandb.Image(data_or_path=pil_img)},
+        #           step=rep_distiller.globals.num_gradient_steps)
+        # plt.close(fig=fig)
         loss = torch.mean(torch.square(H_s - H_t))
         return loss
 

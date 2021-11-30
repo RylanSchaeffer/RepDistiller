@@ -244,14 +244,15 @@ def get_imagenet_dataloaders(dataset='imagenet',
                               batch_size=batch_size,
                               shuffle=True,
                               num_workers=num_workers,
-                              # pin_memory=True,
+                              pin_memory=True,
                               )
 
     eval_loader = DataLoader(eval_set,
                              batch_size=batch_size,
                              shuffle=False,
-                             num_workers=num_workers // 2,
-                             pin_memory=True)
+                             num_workers=num_workers,
+                             pin_memory=True,
+                             )
 
     if is_instance:
         return train_loader, eval_loader, len(train_set)

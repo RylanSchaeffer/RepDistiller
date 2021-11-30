@@ -25,19 +25,18 @@ import torch.nn as nn
 import torch.backends.cudnn as cudnn
 
 from rep_distiller.models import architecture_dict
-from rep_distiller.models import ConvReg, LinearEmbed
-from rep_distiller.models import Connector, Translator, Paraphraser
+from rep_distiller.models.helpers import ConvReg, LinearEmbed
+from rep_distiller.models.helpers import Connector, Translator, Paraphraser
 
 from rep_distiller.dataset.cifar100 import get_cifar100_dataloaders, get_cifar100_dataloaders_sample
 
-from helper.util import adjust_learning_rate
+from rep_distiller.run.helpers import adjust_learning_rate
 
 from rep_distiller.distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, PretrainedRepresentationDistillation, VIDLoss, RKDLoss
 from rep_distiller.distiller_zoo import PKT, ABLoss, FactorTransfer, KDSVD, FSP, NSTLoss
-from rep_distiller.crd import CRDLoss
+from rep_distiller.crd.criterion import CRDLoss
 
-from helper.loops import train_epoch_distill as train, validate
-from helper.pretrain import init
+from rep_distiller.run.loops_old import train_epoch_distill, validate, init
 
 
 def parse_option():
@@ -48,10 +47,10 @@ def parse_option():
     parser.add_argument('--print_freq', type=int, default=100, help='print frequency')
     parser.add_argument('--tb_freq', type=int, default=500, help='tb frequency')
     parser.add_argument('--save_freq', type=int, default=40, help='save frequency')
-    parser.add_argument('--batch_size', type=int, default=64, help='batch_size')
+    parser.add_argument('--batch_size', type=int, default=512, help='batch_size')
     parser.add_argument('--num_workers', type=int, default=8, help='num of workers to use')
     parser.add_argument('--epochs', type=int, default=240, help='number of training epochs')
-    parser.add_argument('--init_epochs', type=int, default=30, help='init training for two-stage methods')
+    parser.add_argument('--init_epochs', type=int, default=1, help='init training for two-stage methods')
 
     # optimization
     parser.add_argument('--learning_rate', type=float, default=0.05, help='learning rate')
@@ -74,7 +73,7 @@ def parse_option():
     # distillation
     parser.add_argument('--distill', type=str, default='kd', choices=['kd', 'hint', 'attention', 'similarity',
                                                                       'correlation', 'vid', 'crd',
-                                                                      'krd', 'kdsvd', 'fsp',
+                                                                      'prd', 'kdsvd', 'fsp',
                                                                       'rkd', 'pkt', 'abound', 'factor', 'nst'])
     parser.add_argument('--trial', type=str, default='1', help='trial id')
 
@@ -102,11 +101,11 @@ def parse_option():
                         action='store_false')
 
     # pretrained representation distillation
-    parser.add_argument('--krd_primal_or_dual', default='primal', type=str, help='Whether to use Primal or Dual')
-    parser.add_argument('--krd_c', default=1e-1, type=float, help='Ridge regression weight')
-    parser.add_argument('--krd_normalize', dest='krd_normalize', default=False,
+    parser.add_argument('--prd_primal_or_dual', default='primal', type=str, help='Whether to use Primal or Dual')
+    parser.add_argument('--prd_c', default=1e-1, type=float, help='Ridge regression weight')
+    parser.add_argument('--prd_normalize', dest='prd_normalize', default=False,
                         action='store_true', help='Whether to normalize KRD representations')
-    parser.add_argument('--krd_dont_normalize', dest='krd_normalize', default=True,
+    parser.add_argument('--prd_dont_normalize', dest='prd_normalize', default=True,
                         action='store_false', help='Whether to normalize KRD representations')
 
     # hint layer
@@ -188,8 +187,7 @@ def main():
     feat_t, _ = model_t(data, is_feat=True)
     feat_s, _ = model_s(data, is_feat=True)
 
-    module_list = nn.ModuleList([])
-    module_list.append(model_s)
+    models_dict = nn.ModuleDict({'student': model_s})
     trainable_list = nn.ModuleList([])
     trainable_list.append(model_s)
 
@@ -200,7 +198,7 @@ def main():
     elif opt.distill == 'hint':
         criterion_kd = HintLoss()
         regress_s = ConvReg(feat_s[opt.hint_layer].shape, feat_t[opt.hint_layer].shape)
-        module_list.append(regress_s)
+        models_dict.append(regress_s)
         trainable_list.append(regress_s)
     elif opt.distill == 'crd':
         opt.s_dim = feat_s[-1].shape[1]
@@ -215,8 +213,8 @@ def main():
             num_neg_examples_per_pos_example=opt.nce_k,
             softmax_temp=opt.nce_t,
             momentum=opt.nce_m)
-        module_list.append(criterion_kd.embed_s)
-        module_list.append(criterion_kd.embed_t)
+        models_dict.append(criterion_kd.embed_s)
+        models_dict.append(criterion_kd.embed_t)
         trainable_list.append(criterion_kd.embed_s)
         trainable_list.append(criterion_kd.embed_t)
     elif opt.distill == 'attention':
@@ -225,11 +223,20 @@ def main():
         criterion_kd = NSTLoss()
     elif opt.distill == 'similarity':
         criterion_kd = Similarity()
-    elif opt.distill == 'krd':
+    elif opt.distill == 'prd':
         criterion_kd = PretrainedRepresentationDistillation(
-            primal_or_dual=opt.krd_primal_or_dual,
-            ridge_prefactor=opt.krd_c,
-            normalize=opt.krd_normalize)
+            primal_or_dual=opt.prd_primal_or_dual,
+            ridge_prefactor=opt.prd_c,
+            normalize=opt.prd_normalize)
+        init_trainable_modules = nn.ModuleList([model_s])
+        init(model_s=model_s,
+             model_t=model_t,
+             trainable_modules=init_trainable_modules,
+             criterion=criterion_kd,
+             loader=train_loader,
+             logger=logger,
+             lr=1e-3,
+             opt=opt)
     elif opt.distill == 'rkd':
         criterion_kd = RKDLoss()
     elif opt.distill == 'pkt':
@@ -240,8 +247,8 @@ def main():
         criterion_kd = Correlation()
         embed_s = LinearEmbed(feat_s[-1].shape[1], opt.feat_dim)
         embed_t = LinearEmbed(feat_t[-1].shape[1], opt.feat_dim)
-        module_list.append(embed_s)
-        module_list.append(embed_t)
+        models_dict.append(embed_s)
+        models_dict.append(embed_t)
         trainable_list.append(embed_s)
         trainable_list.append(embed_t)
     elif opt.distill == 'vid':
@@ -257,36 +264,36 @@ def main():
         t_shapes = [f.shape for f in feat_t[1:-1]]
         connector = Connector(s_shapes, t_shapes)
         # init stage training
-        init_trainable_list = nn.ModuleList([])
-        init_trainable_list.append(connector)
-        init_trainable_list.append(model_s.get_feat_modules())
+        init_trainable_modules = nn.ModuleList([])
+        init_trainable_modules.append(connector)
+        init_trainable_modules.append(model_s.get_feat_modules())
         criterion_kd = ABLoss(len(feat_s[1:-1]))
-        init(model_s, model_t, init_trainable_list, criterion_kd, train_loader, logger, opt)
+        init(model_s, model_t, init_trainable_modules, criterion_kd, train_loader, logger, opt)
         # classification
-        module_list.append(connector)
+        models_dict.append(connector)
     elif opt.distill == 'factor':
         s_shape = feat_s[-2].shape
         t_shape = feat_t[-2].shape
         paraphraser = Paraphraser(t_shape)
         translator = Translator(s_shape, t_shape)
         # init stage training
-        init_trainable_list = nn.ModuleList([])
-        init_trainable_list.append(paraphraser)
+        init_trainable_modules = nn.ModuleList([])
+        init_trainable_modules.append(paraphraser)
         criterion_init = nn.MSELoss()
-        init(model_s, model_t, init_trainable_list, criterion_init, train_loader, logger, opt)
+        init(model_s, model_t, init_trainable_modules, criterion_init, train_loader, logger, opt)
         # classification
         criterion_kd = FactorTransfer()
-        module_list.append(translator)
-        module_list.append(paraphraser)
+        models_dict.append(translator)
+        models_dict.append(paraphraser)
         trainable_list.append(translator)
     elif opt.distill == 'fsp':
         s_shapes = [s.shape for s in feat_s[:-1]]
         t_shapes = [t.shape for t in feat_t[:-1]]
         criterion_kd = FSP(s_shapes, t_shapes)
         # init stage training
-        init_trainable_list = nn.ModuleList([])
-        init_trainable_list.append(model_s.get_feat_modules())
-        init(model_s, model_t, init_trainable_list, criterion_kd, train_loader, logger, opt)
+        init_trainable_modules = nn.ModuleList([])
+        init_trainable_modules.append(model_s.get_feat_modules())
+        init(model_s, model_t, init_trainable_modules, criterion_kd, train_loader, logger, opt)
         # classification training
         pass
     else:
@@ -304,16 +311,20 @@ def main():
                           weight_decay=opt.weight_decay)
 
     # append teacher after optimizer to avoid weight_decay
-    module_list.append(model_t)
+    models_dict['teacher'] = model_t
 
     if torch.cuda.is_available():
-        module_list.cuda()
+        models_dict.cuda()
         criterion_list.cuda()
         cudnn.benchmark = True
 
     # validate teacher accuracy
-    teacher_acc, _, _ = validate(val_loader, model_t, criterion_cls, opt)
-    print('teacher accuracy: ', teacher_acc)
+    teacher_acc1, teacher_acc5, _ = validate(val_loader=val_loader,
+                                 model=model_t,
+                                 criterion=criterion_cls,
+                                 opt=opt,
+                                 model_name='teacher')
+    print(f'Teacher:\tTop1: {teacher_acc1}\tTop5: {teacher_acc5}')
 
     # routine
     for epoch in range(1, opt.epochs + 1):
@@ -322,8 +333,14 @@ def main():
         print("==> training...")
 
         time1 = time.time()
-        train_acc, train_loss, train_classification_loss, train_kd_loss, train_custom_loss = train_epoch(
-            epoch, train_loader, module_list, criterion_list, optimizer, opt)
+        train_acc, train_loss, train_classification_loss, train_kd_loss, train_custom_loss = \
+            train_epoch_distill(
+                epoch=epoch,
+                train_loader=train_loader,
+                models_dict=models_dict,
+                criterion_list=criterion_list,
+                optimizer=optimizer,
+                opt=opt)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
@@ -331,7 +348,11 @@ def main():
         logger.log_value('train_loss', train_loss, epoch)
 
         test_acc, test_acc_top5, test_loss = validate(
-            val_loader, model_s, criterion_cls, opt)
+            val_loader=val_loader,
+            model=model_s,
+            model_name='student',
+            criterion=criterion_cls,
+            opt=opt)
 
         logger.log_value('test_acc', test_acc, epoch)
         logger.log_value('test_loss', test_loss, epoch)

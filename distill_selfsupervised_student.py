@@ -8,7 +8,8 @@ import os
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 # Control GPU Access
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5,6,7,8,9"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5,6,7,8,9"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 
 # Ensure system GPU indices match PyTorch CUDA GPU indices
@@ -39,19 +40,19 @@ def parse_option():
     parser.add_argument('--print_freq', type=int, default=100, help='print frequency')
     parser.add_argument('--tb_freq', type=int, default=500, help='tb frequency')
     parser.add_argument('--save_freq', type=int, default=40, help='save frequency')
-    parser.add_argument('--batch_size', type=int, default=100, help='batch_size')
+    parser.add_argument('--batch_size', type=int, default=1000, help='batch_size')
     # Weird AssertionError appears but is ignored; setting num_workers to 0 blocks it
     # https://discuss.pytorch.org/t/docker-assertionerror-can-only-join-a-child-process/100807/4?u=rylanschaeffer
     parser.add_argument('--num_workers', type=int, default=0, help='num of workers to use')
-    parser.add_argument('--pretrain_epochs', type=int, default=1000,
+    parser.add_argument('--pretrain_epochs', type=int, default=12000000,
                         help='Number of epochs for pretraining')
-    parser.add_argument('--num_pretrain_epochs_per_finetune', type=int, default=50,
+    parser.add_argument('--num_pretrain_epochs_per_finetune', type=int, default=50000,
                         help='Number of pretraining epochs per finetune run')
     parser.add_argument('--finetune_epochs', type=int, default=100,
                         help='Number of epochs for fine tuning')
 
     # optimization
-    parser.add_argument('--learning_rate', type=float, default=1e-4, help='learning rate')
+    parser.add_argument('--learning_rate', type=float, default=1e-6, help='learning rate')
     parser.add_argument('--lr_decay_epochs', type=str, default='150,180,210', help='where to decay lr, can be a list')
     parser.add_argument('--lr_decay_rate', type=float, default=0.1, help='decay rate for learning rate')
     parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')

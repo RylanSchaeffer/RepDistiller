@@ -344,8 +344,6 @@ def run_epoch_pretrain(split: str,
                 model_optimizer.step()
                 rep_distiller.globals.num_gradient_steps += 1
 
-        break
-
     avg_stats_by_model = {model_name: model_stats.averages()
                           for model_name, model_stats in stats_by_model.items()}
     return avg_stats_by_model

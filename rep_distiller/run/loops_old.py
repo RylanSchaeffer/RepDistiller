@@ -14,7 +14,7 @@ from typing import Callable, Dict, List, Tuple
 import wandb
 
 import rep_distiller.models.readout
-import rep_distiller.run.util
+import rep_distiller.run.helpers
 
 
 # def eval_epoch(models_dict: torch.nn.ModuleDict,
@@ -22,13 +22,13 @@ import rep_distiller.run.util
 #                criterion: torch.nn.ModuleList,
 #                opt: argparse.Namespace):
 #     """Eval one epoch."""
-#     batch_time_by_model = {model_name: rep_distiller.run.util.AverageMeter()
+#     batch_time_by_model = {model_name: rep_distiller.run.helpers.AverageMeter()
 #                            for model_name in models_dict}
-#     total_losses_by_model = {model_name: rep_distiller.run.util.AverageMeter()
+#     total_losses_by_model = {model_name: rep_distiller.run.helpers.AverageMeter()
 #                              for model_name in models_dict}
-#     top1_acc_by_model = {model_name: rep_distiller.run.util.AverageMeter()
+#     top1_acc_by_model = {model_name: rep_distiller.run.helpers.AverageMeter()
 #                          for model_name in models_dict}
-#     top5_acc_by_model = {model_name: rep_distiller.run.util.AverageMeter()
+#     top5_acc_by_model = {model_name: rep_distiller.run.helpers.AverageMeter()
 #                          for model_name in models_dict}
 #
 #     # switch to evaluate mode
@@ -49,7 +49,7 @@ import rep_distiller.run.util
 #                 loss = criterion(output, target)
 #
 #                 # measure accuracy and record loss
-#                 acc1, acc5 = rep_distiller.run.util.accuracy(
+#                 acc1, acc5 = rep_distiller.run.helpers.accuracy(
 #                     output,
 #                     target,
 #                     topk=(1, 5))
@@ -84,166 +84,110 @@ import rep_distiller.run.util
 #     return avg_top1_acc_by_model, avg_top5_acc_by_model, avg_total_loss_by_model
 #
 
-def finetune(models_dict: torch.nn.ModuleDict,
-             num_epochs: int,
-             finetune_train_loader: DataLoader,
-             finetune_eval_loader: DataLoader,
-             finetune_criteria_list: torch.nn.ModuleList,
-             opt: argparse.Namespace,
-             finetune_linear_or_nonlinear: str = 'linear',
-             only_readout: bool = True,
-             **kwargs,
-             ):
-    assert finetune_linear_or_nonlinear in {'linear', 'mlp'}
+def init(model_s: torch.nn.Module,
+         model_t: torch.nn.Module,
+         trainable_modules,
+         criterion,
+         loader,
+         logger,
+         opt: argparse.Namespace,
+         lr: float = None,
+         momentum: float = None,
+         weight_decay: float = None):
+    model_t.eval()
+    model_s.eval()
+    trainable_modules.train()
 
-    finetune_models_dicts = dict()
-    finetune_optimizers = dict()
-    for model_name, model in models_dict.items():
+    if torch.cuda.is_available():
+        model_s.cuda()
+        model_t.cuda()
+        trainable_modules.cuda()
+        cudnn.benchmark = True
 
-        # https://discuss.pytorch.org/t/can-i-deepcopy-a-model/52192
-        model_copy = copy.deepcopy(model)
+    if lr is None:
+        lr = opt.learning_rate
 
-        # First create model to fine-tune
-        if finetune_linear_or_nonlinear == 'linear':
-            finetune_model = rep_distiller.models.readout.LinearReadout(
-                dim_in=model_copy.feat_dim,
-                dim_out=len(np.unique(finetune_train_loader.dataset.targets)),
-                encoder=model,
-                train_only_readout=only_readout,
-            )
-        elif finetune_linear_or_nonlinear == 'mlp':
-            # finetune_model = rep_distiller.models.classifier.MLPReadout(
-            #     num_classes=len(finetune_train_loader.target.unique()),
-            #     encoder=model,
-            # )
-            raise NotImplementedError
-        else:
-            raise ValueError
+    if momentum is None:
+        momentum = opt.momentum
 
-        if only_readout:
-            params = finetune_model.readout.parameters()
-        else:
-            params = finetune_model.parameters()
+    if weight_decay is None:
+        weight_decay = opt.weight_decay
 
-        finetune_optimizers = torch.optim.SGD(
-            params,
-            lr=1e-3)
+    if opt.model_s in {'resnet8', 'resnet14', 'resnet20', 'resnet32', 'resnet44', 'resnet56', 'resnet110',
+                       'resnet8x4', 'resnet32x4', 'wrn_16_1', 'wrn_16_2', 'wrn_40_1', 'wrn_40_2'} and \
+            opt.distill == 'factor':
+        lr = 0.01
 
-        run_epoch(split='train',
-                  models_dict=torch.nn.ModuleDict({f'finetune_{model_name}': finetune_model}),
-                  criterion=10,
-                  loader=finetune_train_loader,
-                  optimizer=finetune_optimizers)
+    optimizer = torch.optim.SGD(
+        trainable_modules.parameters(),
+        lr=lr,
+        momentum=momentum,
+        weight_decay=weight_decay)
 
-        # Then call train
-        train(models_dict=torch.nn.ModuleDict({f'finetune_{model_name}': finetune_model}),
-              num_epochs=num_epochs,
-              optimizer=finetune_optimizers,
-              opt=opt,
-              train_loader=finetune_train_loader,
-              eval_loader=finetune_eval_loader,
-              criteria_list=finetune_criteria_list)
+    batch_time = rep_distiller.run.helpers.AverageMeter()
+    data_time = rep_distiller.run.helpers.AverageMeter()
+    losses = rep_distiller.run.helpers.AverageMeter()
+    for epoch in range(1, opt.init_epochs + 1):
+        batch_time.reset()
+        data_time.reset()
+        losses.reset()
+        end = time.time()
+        for idx, data in enumerate(loader):
+            if opt.distill in ['crd']:
+                input, target, index, contrast_idx = data
+            else:
+                input, target, index = data
+            data_time.update(time.time() - end)
 
-    return 10
+            input = input.float()
+            if torch.cuda.is_available():
+                input = input.cuda()
+                # target = target.cuda()
+                # index = index.cuda()
+                if opt.distill in ['crd']:
+                    contrast_idx = contrast_idx.cuda()
 
+            # ============= forward ==============
+            preact = (opt.distill == 'abound')
+            feat_s, _ = model_s(input, is_feat=True, preact=preact)
+            with torch.no_grad():
+                feat_t, _ = model_t(input, is_feat=True, preact=preact)
+                feat_t = [f.detach() for f in feat_t]
 
-def pretrain_and_finetune(models_dict: torch.nn.ModuleDict,
-                          pretrain_train_loader: DataLoader,
-                          pretrain_eval_loader: DataLoader,
-                          pretrain_epochs: int,
-                          finetune_train_loader: DataLoader,
-                          finetune_eval_loader: DataLoader,
-                          finetune_epochs: int,
-                          criteria_dict: torch.nn.ModuleDict,
-                          optimizer: torch.optim.Optimizer,
-                          opt: argparse.Namespace,
-                          logger,
-                          **kwargs):
-    """
-    Loop to alternate between pretraining and fine-tuning.
-    """
+            if opt.distill == 'abound':
+                g_s = trainable_modules[0](feat_s[1:-1])
+                g_t = feat_t[1:-1]
+                loss_group = criterion(g_s, g_t)
+                loss = sum(loss_group)
+            elif opt.distill == 'factor':
+                f_t = feat_t[-2]
+                _, f_t_rec = trainable_modules[0](f_t)
+                loss = criterion(f_t_rec, f_t)
+            elif opt.distill == 'fsp':
+                loss_group = criterion(feat_s[:-1], feat_t[:-1])
+                loss = sum(loss_group)
+            elif opt.distill == 'prd':
+                loss = criterion(feat_s[-1], feat_t[-1])
+            else:
+                raise NotImplemented('Not supported in init training: {}'.format(opt.distill))
 
-    print("==> pretraining...")
+            losses.update(loss.item(), input.size(0))
 
-    def compute_finetune_loss(model_outputs: Dict[str, torch.Tensor],
-                              target: torch.Tensor,
-                              criteria_dict: torch.nn.ModuleDict,
-                              **kwargs
-                              ) -> Dict[str, torch.Tensor]:
+            # ===================backward=====================
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-        classification_loss = criteria_dict['cross_entropy'](
-            input=model_outputs['student_output'],
-            target=target, )
-        distillation_loss = criteria_dict['custom'](
-            input=model_outputs['student_output'],
-            target=model_outputs['teacher_output'])
+            batch_time.update(time.time() - end)
+            end = time.time()
 
-        losses = dict(classification_loss=classification_loss,
-                      distillation_loss=distillation_loss)
-        return losses
-
-    # # fine tune student and teacher
-    # finetune(models_dict=models_dict,
-    #          num_epochs=finetune_epochs,
-    #          finetune_train_loader=finetune_train_loader,
-    #          finetune_eval_loader=finetune_eval_loader,
-    #          finetune_criteria_list=finetune_criteria_list,
-    #          opt=opt)
-
-    best_total_loss = np.inf
-
-    for epoch_idx in range(1, pretrain_epochs + 1):
-
-        rep_distiller.run.util.adjust_learning_rate(epoch_idx, opt, optimizer)
-        for split in ['pretrain_train', 'pretrain_eval']:
-            time1 = time.time()
-            epoch_avg_stats_by_model = run_epoch(
-                split=split,
-                models_dict=models_dict,
-                loader=pretrain_train_loader if split == 'pretrain_train' else pretrain_eval_loader,
-                optimizer=optimizer,
-                loss_fn=compute_pretrain_loss)
-            time2 = time.time()
-            print('epoch {}, split {}, student loss: {}, total time {:.2f}'.format(
-                epoch_idx,
-                split,
-                epoch_avg_stats_by_model['student']['total_loss'],
-                time2 - time1))
-
-            wandb_dict = {f'{split}_{k}': v for k, v in epoch_avg_stats_by_model.items()}
-            wandb_dict['learning_rate'] = optimizer.defaults['lr']
-            wandb.log(wandb_dict,
-                      step=epoch_idx)
-
-        # save the best model
-        student_eval_loss = epoch_avg_stats_by_model['student']['total_loss']
-        if student_eval_loss > best_total_loss:
-            best_total_loss = student_eval_loss
-            state = {
-                'epoch': epoch_idx,
-                'model': models_dict['student'].state_dict(),
-                'best_total_loss': best_total_loss,
-            }
-            save_file = os.path.join(opt.save_folder, '{}_best.pth'.format(
-                opt.student_architecture))
-            print('saving the best model!')
-            torch.save(state, save_file)
-
-        # regular saving
-        if epoch_idx % opt.save_freq == 0:
-            print('==> Saving...')
-            state = {
-                'epoch': epoch_idx,
-                'model': models_dict['student'].state_dict(),
-                'total_loss': student_eval_loss,
-            }
-            save_file = os.path.join(opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(
-                epoch=epoch_idx))
-            torch.save(state, save_file)
-
-    # This best accuracy is only for printing purpose.
-    # The results reported in the paper/README is from the last epoch.
-    print('best total loss:', best_total_loss)
+        # end of epoch
+        logger.log_value('init_train_loss', losses.avg, epoch)
+        print('Epoch: [{0}/{1}]\t'
+              'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+              'losses: {losses.val:.9f} ({losses.avg:.9f})'.format(
+            epoch, opt.init_epochs, batch_time=batch_time, losses=losses))
+        sys.stdout.flush()
 
 
 def pretrain(model_s, model_t, init_modules, criterion, train_loader, logger, opt):
@@ -268,9 +212,9 @@ def pretrain(model_s, model_t, init_modules, criterion, train_loader, logger, op
                                 momentum=opt.momentum,
                                 weight_decay=opt.weight_decay)
 
-    batch_time = rep_distiller.run.util.AverageMeter()
-    data_time = rep_distiller.run.util.AverageMeter()
-    losses = rep_distiller.run.util.AverageMeter()
+    batch_time = rep_distiller.run.helpers.AverageMeter()
+    data_time = rep_distiller.run.helpers.AverageMeter()
+    losses = rep_distiller.run.helpers.AverageMeter()
     for epoch in range(1, opt.init_epochs + 1):
         batch_time.reset()
         data_time.reset()
@@ -347,7 +291,7 @@ def run_epoch(split: str,
     else:
         models_dict.eval()
 
-    stats_by_model = {model_name: rep_distiller.run.util.Statistics()
+    stats_by_model = {model_name: rep_distiller.run.helpers.Statistics()
                       for model_name in models_dict}
 
     for batch_idx, (input_tensors, target_tensors) in enumerate(loader):
@@ -374,7 +318,7 @@ def run_epoch(split: str,
 
             # if split in {'train', 'eval', 'test'}:
             #     # measure accuracy and record loss
-            #     acc1, acc5 = rep_distiller.run.util.accuracy(
+            #     acc1, acc5 = rep_distiller.run.helpers.accuracy(
             #         output,
             #         target_tensors,
             #         topk=(1, 5))
@@ -427,58 +371,14 @@ def run_epoch(split: str,
     return avg_stats_by_model
 
 
-def run_hooks(fn_hook_dict: Dict[int, List[Callable]],
-              models_dict: Dict[str, torch.nn.ModuleDict],
-              pretrain_train_loader: DataLoader,
-              pretrain_eval_loader: DataLoader,
-              pretrain_epochs: int,
-              finetune_train_loader: DataLoader,
-              finetune_eval_loader: DataLoader,
-              finetune_epochs: int,
-              criteria_dict: torch.nn.ModuleDict,
-              optimizer: torch.optim.Optimizer,
-              opt: argparse.Namespace,
-              logger,
-              **kwargs):
-
-    start_step = 0
-    stop_step = max(fn_hook_dict.keys())
-
-    for step in range(start_step, stop_step):
-
-        hook_input_dict = dict()
-
-        if step in fn_hook_dict:
-
-            hook_input = dict(
-                feedback_by_dt=run_envs_output['feedback_by_dt'],
-                avg_loss_per_dt=run_envs_output['avg_loss_per_dt'].item(),
-                dts_by_trial=run_envs_output['dts_by_trial'],
-                action_taken_by_total_trials=run_envs_output['action_taken_by_total_trials'],
-                correct_action_taken_by_action_taken=run_envs_output['correct_action_taken_by_action_taken'],
-                correct_action_taken_by_total_trials=run_envs_output['correct_action_taken_by_total_trials'],
-                session_data=run_envs_output['session_data'],
-                hidden_states=hidden_states,
-                grad_step=step,
-                model=model,
-                envs=envs,
-                optimizer=optimizer,
-                tensorboard_writer=tensorboard_writer,
-                tag_prefix=tag_prefix,
-                params=params)
-
-            for hook_fn in fn_hook_dict[step]:
-                hook_fn(hook_input)
-
-
-def train_old(models_dict,
-              num_epochs: int,
-              optimizer: torch.optim.Optimizer,
-              opt: argparse.Namespace,
-              train_loader: DataLoader,
-              eval_loader: DataLoader,
-              criteria_list: torch.nn.ModuleList,
-              ):
+def train(models_dict,
+          num_epochs: int,
+          optimizer: torch.optim.Optimizer,
+          opt: argparse.Namespace,
+          train_loader: DataLoader,
+          eval_loader: DataLoader,
+          criteria_list: torch.nn.ModuleList,
+          ):
     # routine
     for epoch in range(1, num_epochs + 1):
 
@@ -548,11 +448,11 @@ def train_epoch_vanilla(epoch, train_loader, model, criterion, optimizer, opt):
     """vanilla training"""
     model.train()
 
-    batch_time = rep_distiller.run.util.AverageMeter()
-    data_time = rep_distiller.run.util.AverageMeter()
-    losses = rep_distiller.run.util.AverageMeter()
-    top1 = rep_distiller.run.util.AverageMeter()
-    top5 = rep_distiller.run.util.AverageMeter()
+    batch_time = rep_distiller.run.helpers.AverageMeter()
+    data_time = rep_distiller.run.helpers.AverageMeter()
+    losses = rep_distiller.run.helpers.AverageMeter()
+    top1 = rep_distiller.run.helpers.AverageMeter()
+    top5 = rep_distiller.run.helpers.AverageMeter()
 
     end = time.time()
     for idx, (input, target) in enumerate(train_loader):
@@ -610,10 +510,9 @@ def train_epoch_distill(epoch: int,
                         opt):
     """Train one epoch (distillation)"""
     # set modules as train()
-    for module in models_dict:
-        module.train()
+    models_dict['student'].train()
     # set teacher as eval()
-    models_dict[-1].eval()
+    models_dict['teacher'].eval()
 
     if opt.distill == 'abound':
         models_dict[1].eval()
@@ -624,17 +523,17 @@ def train_epoch_distill(epoch: int,
     criterion_div = criterion_list[1]
     criterion_kd = criterion_list[2]
 
-    model_s = models_dict[0]
-    model_t = models_dict[-1]
+    model_s = models_dict['student']
+    model_t = models_dict['teacher']
 
-    batch_time = rep_distiller.run.util.AverageMeter()
-    data_time = rep_distiller.run.util.AverageMeter()
-    total_losses = rep_distiller.run.util.AverageMeter()
-    classification_losses = rep_distiller.run.util.AverageMeter()
-    kl_div_losses = rep_distiller.run.util.AverageMeter()
-    custom_losses = rep_distiller.run.util.AverageMeter()
-    top1 = rep_distiller.run.util.AverageMeter()
-    top5 = rep_distiller.run.util.AverageMeter()
+    batch_time = rep_distiller.run.helpers.AverageMeter()
+    data_time = rep_distiller.run.helpers.AverageMeter()
+    total_losses = rep_distiller.run.helpers.AverageMeter()
+    classification_losses = rep_distiller.run.helpers.AverageMeter()
+    kl_div_losses = rep_distiller.run.helpers.AverageMeter()
+    custom_losses = rep_distiller.run.helpers.AverageMeter()
+    top1 = rep_distiller.run.helpers.AverageMeter()
+    top5 = rep_distiller.run.helpers.AverageMeter()
 
     end = time.time()
     for idx, data in enumerate(train_loader):
@@ -691,7 +590,7 @@ def train_epoch_distill(epoch: int,
             g_t = [feat_t[-2]]
             loss_group = criterion_kd(g_s, g_t)
             loss_kd = sum(loss_group)
-        elif opt.distill == 'krd':
+        elif opt.distill == 'prd':
             f_s = feat_s[-1]
             f_t = feat_t[-1]
             loss_kd = criterion_kd(f_s, f_t)
@@ -735,13 +634,18 @@ def train_epoch_distill(epoch: int,
         custom_loss = opt.custom_weight * loss_kd
         total_loss = classification_loss + kl_div_loss + custom_loss
 
-        acc1, acc5 = accuracy(logit_s, target, topk=(1, 5))
+        acc_by_model = rep_distiller.run.helpers.compute_accuracy(
+            output_tensors_by_model={'student': logit_s},
+            target=target,
+            topk=(1, 5))
+        acc1 = acc_by_model['student']['top_1_acc']
+        acc5 = acc_by_model['student']['top_5_acc']
         classification_losses.update(classification_loss.item(), input.size(0))
         kl_div_losses.update(kl_div_loss.item(), input.size(0))
         custom_losses.update(custom_loss.item(), input.size(0))
         total_losses.update(total_loss.item(), input.size(0))
-        top1.update(acc1[0], input.size(0))
-        top5.update(acc5[0], input.size(0))
+        top1.update(acc1.item(), input.size(0))
+        top5.update(acc5.item(), input.size(0))
 
         # ===================backward=====================
         optimizer.zero_grad()
@@ -770,90 +674,59 @@ def train_epoch_distill(epoch: int,
     return top1.avg, total_losses.avg, classification_losses.avg, kl_div_losses.avg, custom_losses.avg
 
 
-def init(model_s, model_t, init_modules, criterion, train_loader, logger, opt):
-    model_t.eval()
-    model_s.eval()
-    init_modules.train()
+def validate(val_loader,
+             model,
+             model_name: str,
+             criterion,
+             opt: argparse.Namespace):
+    """validation"""
+    batch_time = rep_distiller.run.helpers.AverageMeter()
+    losses = rep_distiller.run.helpers.AverageMeter()
+    top1 = rep_distiller.run.helpers.AverageMeter()
+    top5 = rep_distiller.run.helpers.AverageMeter()
 
-    if torch.cuda.is_available():
-        model_s.cuda()
-        model_t.cuda()
-        init_modules.cuda()
-        cudnn.benchmark = True
+    # switch to evaluate mode
+    model.eval()
 
-    if opt.model_s in ['resnet8', 'resnet14', 'resnet20', 'resnet32', 'resnet44', 'resnet56', 'resnet110',
-                       'resnet8x4', 'resnet32x4', 'wrn_16_1', 'wrn_16_2', 'wrn_40_1', 'wrn_40_2'] and \
-            opt.distill == 'factor':
-        lr = 0.01
-    else:
-        lr = opt.learning_rate
-    optimizer = optim.SGD(init_modules.parameters(),
-                          lr=lr,
-                          momentum=opt.momentum,
-                          weight_decay=opt.weight_decay)
-
-    batch_time = rep_distiller.run.util.AverageMeter()
-    data_time = rep_distiller.run.util.AverageMeter()
-    losses = rep_distiller.run.util.AverageMeter()
-    for epoch in range(1, opt.init_epochs + 1):
-        batch_time.reset()
-        data_time.reset()
-        losses.reset()
+    with torch.no_grad():
         end = time.time()
-        for idx, data in enumerate(train_loader):
-            if opt.distill in ['crd']:
-                input, target, index, contrast_idx = data
-            else:
-                input, target, index = data
-            data_time.update(time.time() - end)
+        for idx, (input, target) in enumerate(val_loader):
 
             input = input.float()
             if torch.cuda.is_available():
                 input = input.cuda()
-                # target = target.cuda()
-                # index = index.cuda()
-                if opt.distill in ['crd']:
-                    contrast_idx = contrast_idx.cuda()
+                target = target.cuda()
 
-            # ============= forward ==============
-            preact = (opt.distill == 'abound')
-            feat_s, _ = model_s(input, is_feat=True, preact=preact)
-            with torch.no_grad():
-                feat_t, _ = model_t(input, is_feat=True, preact=preact)
-                feat_t = [f.detach() for f in feat_t]
+            # compute output
+            output = model(input)
+            loss = criterion(output, target)
 
-            if opt.distill == 'abound':
-                g_s = init_modules[0](feat_s[1:-1])
-                g_t = feat_t[1:-1]
-                loss_group = criterion(g_s, g_t)
-                loss = sum(loss_group)
-            elif opt.distill == 'factor':
-                f_t = feat_t[-2]
-                _, f_t_rec = init_modules[0](f_t)
-                loss = criterion(f_t_rec, f_t)
-            elif opt.distill == 'fsp':
-                loss_group = criterion(feat_s[:-1], feat_t[:-1])
-                loss = sum(loss_group)
-            else:
-                raise NotImplemented('Not supported in init training: {}'.format(opt.distill))
-
+            # measure accuracy and record loss
+            acc_by_model = rep_distiller.run.helpers.compute_accuracy(
+                {model_name: output}, target, topk=(1, 5))
+            acc1 = acc_by_model[model_name]['top_1_acc']
+            acc5 = acc_by_model[model_name]['top_5_acc']
             losses.update(loss.item(), input.size(0))
+            top1.update(acc1.item(), input.size(0))
+            top5.update(acc5.item(), input.size(0))
 
-            # ===================backward=====================
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
+            # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
 
-        # end of epoch
-        logger.log_value('init_train_loss', losses.avg, epoch)
-        print('Epoch: [{0}/{1}]\t'
-              'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-              'losses: {losses.val:.3f} ({losses.avg:.3f})'.format(
-            epoch, opt.init_epochs, batch_time=batch_time, losses=losses))
-        sys.stdout.flush()
+            if idx % opt.print_freq == 0:
+                print('Test: [{0}/{1}]\t'
+                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                      'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                      'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
+                       idx, len(val_loader), batch_time=batch_time, loss=losses,
+                       top1=top1, top5=top5))
+
+        print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
+              .format(top1=top1, top5=top5))
+
+    return top1.avg, top5.avg, losses.avg
 
 
 if __name__ == '__main__':

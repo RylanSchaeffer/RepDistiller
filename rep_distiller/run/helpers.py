@@ -84,7 +84,8 @@ def adjust_learning_rate(epoch, opt, optimizer):
 
 def compute_accuracy(output_tensors_by_model: Dict[str, torch.Tensor],
                      target: torch.Tensor,
-                     topk: Tuple = (1,)):
+                     topk: Tuple = (1,),
+                     ) -> Dict[str, Dict[str, torch.Tensor]]:
     """Computes the accuracy over the k top predictions for the specified values of k"""
     with torch.no_grad():
 
