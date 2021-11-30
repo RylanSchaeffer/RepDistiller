@@ -50,7 +50,10 @@ class PretrainedRepresentationDistillation(nn.Module):
         for ax_idx, (model_str, H) in enumerate([('S', H_s), ('T', H_t)]):
             ax = axes[ax_idx]
             ax.set_title(rf'H_{model_str}')
-            sns.heatmap(H.cpu().detach().numpy(), ax=ax, cmap="coolwarm", center=0.)
+            sns.heatmap(H.cpu().detach().numpy(),
+                        ax=ax,
+                        cmap="coolwarm",
+                        center=0.)
         # Convert to PIL to be able to save
         # See https://stackoverflow.com/a/61756899/4570472 and comment
         fig.canvas.draw()

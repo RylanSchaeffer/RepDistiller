@@ -6,13 +6,14 @@ from __future__ import print_function
 
 import os
 
-# Ensure system GPU indices match PyTorch CUDA GPU indices
-import rep_distiller.run.loops
-import rep_distiller.run.helpers
-
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 # Control GPU Access
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5,6,7,8,9"
+
+
+# Ensure system GPU indices match PyTorch CUDA GPU indices
+import rep_distiller.run.loops
+import rep_distiller.run.helpers
 
 import argparse
 import socket
