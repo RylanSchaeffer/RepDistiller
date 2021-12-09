@@ -19,7 +19,8 @@ class MLPReadout(nn.Module):
         self.train_only_readout = train_only_readout
         self.act_callable = act()
         if self.train_only_readout:
-            self.encoder.requires_grad_(False)
+            if self.encoder is not None:
+                self.encoder.requires_grad_(False)
 
         mlp_layers = []
         for i in range(len(sizes) - 1):

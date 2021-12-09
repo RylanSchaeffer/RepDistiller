@@ -17,7 +17,7 @@ class PretrainedRepresentationDistillation(nn.Module):
     def __init__(self,
                  primal_or_dual: str,
                  ridge_prefactor: float,
-                 normalize: bool):
+                 normalize: bool = False):
         assert primal_or_dual in {'primal', 'dual'}
         assert ridge_prefactor > 0
         super(PretrainedRepresentationDistillation, self).__init__()
@@ -29,6 +29,8 @@ class PretrainedRepresentationDistillation(nn.Module):
                 f_s: torch.Tensor,
                 f_t: torch.Tensor,
                 ) -> torch.Tensor:
+
+        # Flatten
         batch_size = f_s.shape[0]
         f_s = f_s.reshape(batch_size, -1)
         f_t = f_t.reshape(batch_size, -1)
@@ -63,7 +65,9 @@ class PretrainedRepresentationDistillation(nn.Module):
         # wandb.log({'pretrain_hat_matrices': wandb.Image(data_or_path=pil_img)},
         #           step=rep_distiller.globals.num_gradient_steps)
         # plt.close(fig=fig)
-        loss = torch.mean(torch.square(H_s - H_t))
+        diff = H_s - H_t
+        squared_diff = torch.square(diff)
+        loss = torch.mean(squared_diff)
         return loss
 
     @staticmethod
@@ -80,10 +84,11 @@ class PretrainedRepresentationDistillation(nn.Module):
 
         assert c > 0.
         batch_size, feature_dim = X.shape
+        scaled_eye = c * torch.eye(feature_dim).cuda()
         hat_matrix = torch.einsum(
             'ab,bc,cd->ad',
             X,
-            torch.linalg.inv(X.T @ X + c * torch.eye(feature_dim).cuda()),
+            torch.linalg.inv(X.T @ X + scaled_eye),
             X.T,
         )
         return hat_matrix
@@ -102,10 +107,11 @@ class PretrainedRepresentationDistillation(nn.Module):
 
         assert c > 0.
         batch_size, feature_dim = X.shape
+        scaled_eye = c * torch.eye(batch_size).cuda()
         hat_matrix = torch.einsum(
             'ab,bc,cd->ad',
             X,
             X.T,
-            torch.linalg.inv(X @ X.T + c * torch.eye(batch_size).cuda()),
+            torch.linalg.inv(X @ X.T + scaled_eye),
         )
         return hat_matrix

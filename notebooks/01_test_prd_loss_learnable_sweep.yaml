@@ -1,0 +1,16 @@
+program: notebooks/01_test_prd_loss_learnable.py
+method: grid
+metric:
+  goal: minimize
+  name: loss
+parameters:
+  sizes:
+    values: [[23, 13], [32, 32, 13]]
+  primal_or_dual:
+    values: ['primal', 'dual']
+  ridge_prefactor:
+    values: [1000, 100, 10, 1, 0.1, 0.01, 0.001]
+  normalized_student:
+    values: [True, False]
+  learning_rate:
+    values: [100, 10, 1, 0.1, 0.01, 0.001]
