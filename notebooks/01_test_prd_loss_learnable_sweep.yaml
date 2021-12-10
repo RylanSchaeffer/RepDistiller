@@ -1,4 +1,5 @@
 program: notebooks/01_test_prd_loss_learnable.py
+project: test_prd_loss_learnable
 method: grid
 metric:
   goal: minimize

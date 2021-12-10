@@ -32,7 +32,8 @@ from rep_distiller.dataset.cifar100 import get_cifar100_dataloaders, get_cifar10
 
 from rep_distiller.run.helpers import adjust_learning_rate
 
-from rep_distiller.distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, PretrainedRepresentationDistillation, VIDLoss, RKDLoss
+from rep_distiller.distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, \
+    PretrainedRepresentationDistillation, VIDLoss, RKDLoss
 from rep_distiller.distiller_zoo import PKT, ABLoss, FactorTransfer, KDSVD, FSP, NSTLoss
 from rep_distiller.crd.criterion import CRDLoss
 
@@ -47,10 +48,10 @@ def parse_option():
     parser.add_argument('--print_freq', type=int, default=100, help='print frequency')
     parser.add_argument('--tb_freq', type=int, default=500, help='tb frequency')
     parser.add_argument('--save_freq', type=int, default=40, help='save frequency')
-    parser.add_argument('--batch_size', type=int, default=512, help='batch_size')
+    parser.add_argument('--batch_size', type=int, default=1000, help='batch_size')
     parser.add_argument('--num_workers', type=int, default=8, help='num of workers to use')
-    parser.add_argument('--epochs', type=int, default=240, help='number of training epochs')
-    parser.add_argument('--init_epochs', type=int, default=1, help='init training for two-stage methods')
+    parser.add_argument('--epochs', type=int, default=500, help='number of training epochs')
+    parser.add_argument('--init_epochs', type=int, default=100, help='init training for two-stage methods')
 
     # optimization
     parser.add_argument('--learning_rate', type=float, default=0.05, help='learning rate')
@@ -319,11 +320,12 @@ def main():
         cudnn.benchmark = True
 
     # validate teacher accuracy
-    teacher_acc1, teacher_acc5, _ = validate(val_loader=val_loader,
-                                 model=model_t,
-                                 criterion=criterion_cls,
-                                 opt=opt,
-                                 model_name='teacher')
+    teacher_acc1, teacher_acc5, _ = validate(
+        val_loader=val_loader,
+        model=model_t,
+        model_name='teacher',
+        criterion=criterion_cls,
+        opt=opt)
     print(f'Teacher:\tTop1: {teacher_acc1}\tTop5: {teacher_acc5}')
 
     # routine
@@ -367,7 +369,7 @@ def main():
             'test_acc': test_acc,
             'test_acc_top5': test_acc_top5,
             'test_loss': test_loss,
-            },
+        },
             step=epoch)
 
         # save the best model

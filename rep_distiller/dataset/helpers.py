@@ -2,7 +2,8 @@ import argparse
 from torch.utils.data.dataloader import DataLoader
 from typing import Tuple
 
-from rep_distiller.dataset.cifar100 import get_cifar100_dataloaders, get_cifar100_dataloaders_sample
+from rep_distiller.dataset.cifar100 import get_cifar10_dataloaders, get_cifar100_dataloaders, \
+    get_cifar100_dataloaders_sample
 from rep_distiller.dataset.imagenet import get_imagenet_dataloaders
 
 
@@ -29,6 +30,13 @@ def load_dataloaders(dataset: str,
                 is_instance=False,
                 train_transform=train_transform,
                 eval_transform=eval_transform)
+    elif dataset == 'cifar10':
+        train_loader, val_loader, _ = get_cifar10_dataloaders(
+            batch_size=opt.batch_size,
+            num_workers=opt.num_workers,
+            is_instance=False,
+            train_transform=train_transform,
+            eval_transform=eval_transform)
     elif dataset == 'imagenet':
         if opt.distill in {'crd'}:
             # train_loader, val_loader = get_imagenet_dataloaders_sample

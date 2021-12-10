@@ -9,7 +9,7 @@ import os
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 # Control GPU Access
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5,6,7,8,9"
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 
 
 # Ensure system GPU indices match PyTorch CUDA GPU indices
@@ -46,7 +46,7 @@ def parse_option():
     parser.add_argument('--num_workers', type=int, default=0, help='num of workers to use')
     parser.add_argument('--pretrain_epochs', type=int, default=12000000,
                         help='Number of epochs for pretraining')
-    parser.add_argument('--num_pretrain_epochs_per_finetune', type=int, default=50000,
+    parser.add_argument('--num_pretrain_epochs_per_finetune', type=int, default=1000,
                         help='Number of pretraining epochs per finetune run')
     parser.add_argument('--finetune_epochs', type=int, default=100,
                         help='Number of epochs for fine tuning')
@@ -59,8 +59,10 @@ def parse_option():
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
 
     # dataset
-    parser.add_argument('--pretrain_dataset', type=str, default='imagenet', choices=['imagenet'], help='dataset')
-    parser.add_argument('--finetune_dataset', type=str, default='cifar100', choices=['cifar100'], help='dataset')
+    parser.add_argument('--pretrain_dataset', type=str, default='imagenet',
+                        choices=['imagenet', 'cifar100'], help='dataset')
+    parser.add_argument('--finetune_dataset', type=str, default='cifar100',
+                        choices=['cifar100', 'cifar10'], help='dataset')
 
     # model
     parser.add_argument('--student_architecture', type=str, default='resnet8x4',
